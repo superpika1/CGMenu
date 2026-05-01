@@ -6,6 +6,7 @@ import dearpygui.dearpygui as dpg
 import keyboard
 import pymem
 import pymem.process
+import time
 
 MENU_TITLE = "Crab Game Menu"
 MENU_TAG = "menu_window"
@@ -14,8 +15,13 @@ CURRENT_POSITION_TAG = "current_position"
 STATUS_TAG = "status_text"
 STATUS_OK_THEME = "status_ok_theme"
 STATUS_ERROR_THEME = "status_error_theme"
+APPLY_BUTTON_TAG = "apply_position_button"
+REFRESH_BUTTON_TAG = "refresh_position_button"
+TELEPORT_BUTTON_TAG = "teleport_interact_button"
 
 PLAYER_STATIC_OFFSET = 0x01A81BA8
+INTERACT_TELEPORT_POSITION = (0.678, -18.297, 12.257)
+INTERACT_TELEPORT_HOTKEY = "f6"
 
 AXIS_POINTERS = {
     "x": [0x480, 0x3A0],
@@ -33,6 +39,8 @@ visible = False
 pm = None
 SW_HIDE = 0
 SW_SHOW = 5
+WM_NCLBUTTONDOWN = 0x00A1
+HTCAPTION = 2
 
 
 def set_status(message, is_error=False):
@@ -102,6 +110,25 @@ def toggle_window():
         ctypes.windll.user32.ShowWindow(hwnd, SW_HIDE)
 
 
+def is_interactive_item_hovered():
+    interactive_tags = (
+        POSITION_INPUT_TAG,
+        APPLY_BUTTON_TAG,
+        REFRESH_BUTTON_TAG,
+        TELEPORT_BUTTON_TAG,
+    )
+    return any(dpg.is_item_hovered(tag) for tag in interactive_tags if dpg.does_item_exist(tag))
+
+
+def begin_native_window_drag():
+    hwnd = get_hwnd()
+    if not hwnd:
+        return
+
+    ctypes.windll.user32.ReleaseCapture()
+    ctypes.windll.user32.SendMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0)
+
+
 def read_pointer_chain(process, base_addr, static_offset, offsets):
     address = base_addr + static_offset
     for offset in offsets:
@@ -158,6 +185,20 @@ def write_position(position):
         process.write_float(addresses[axis], float(value))
 
 
+def teleport_and_press_interact(update_status=True, sync_ui=False):
+    write_position(INTERACT_TELEPORT_POSITION)
+    time.sleep(0.5)
+    keyboard.press_and_release("e")
+
+    if sync_ui:
+        sync_position_ui(show_status=False)
+
+    if update_status:
+        set_status(
+            f"Teleported to {format_position(INTERACT_TELEPORT_POSITION)} and pressed E."
+        )
+
+
 def parse_position_input(raw_value):
     parts = [part for part in re.split(r"[\s,]+", raw_value.strip()) if part]
     if len(parts) != 3:
@@ -189,6 +230,23 @@ def apply_position(sender=None, app_data=None, user_data=None):
         set_status(f"Moved to {format_position(position)}.")
     except Exception as exc:
         set_status(f"Unable to update position: {exc}", is_error=True)
+
+
+def apply_interact_teleport(sender=None, app_data=None, user_data=None):
+    try:
+        teleport_and_press_interact(sync_ui=True)
+    except Exception as exc:
+        set_status(f"Unable to run teleport action: {exc}", is_error=True)
+
+
+def hotkey_interact_teleport():
+    try:
+        teleport_and_press_interact(update_status=False, sync_ui=False)
+        print(
+            f"Hotkey teleport -> {format_position(INTERACT_TELEPORT_POSITION)} and pressed E."
+        )
+    except Exception as exc:
+        print(f"Hotkey teleport failed: {exc}")
 
 
 def nudge_axis(axis, delta):
@@ -232,6 +290,14 @@ def handle_axis_hotkey(sender, app_data):
     if app_data in keymap:
         axis, delta = keymap[app_data]
         nudge_axis(axis, delta)
+
+
+def handle_mouse_down(sender, app_data):
+    if app_data != 0 or not visible:
+        return
+
+    if dpg.is_item_hovered(MENU_TAG) and not is_interactive_item_hovered():
+        begin_native_window_drag()
 
 
 def build_theme():
@@ -307,16 +373,30 @@ def build_ui():
         )
 
         with dpg.group(horizontal=True):
-            dpg.add_button(label="Apply Position", width=210,
+            dpg.add_button(label="Apply Position", tag=APPLY_BUTTON_TAG, width=210,
                            height=34, callback=apply_position)
             dpg.add_button(
                 label="Refresh Current",
+                tag=REFRESH_BUTTON_TAG,
                 width=210,
                 height=34,
                 callback=lambda sender, app_data, user_data: sync_position_ui(),
             )
 
+        dpg.add_spacer(height=4)
+        dpg.add_button(
+            label="Teleport To Interact Spot + Press E",
+            tag=TELEPORT_BUTTON_TAG,
+            width=430,
+            height=38,
+            callback=apply_interact_teleport,
+        )
+
         dpg.add_separator()
+        dpg.add_text(
+            f"{INTERACT_TELEPORT_HOTKEY.upper()} = Teleport to preset spot and press E",
+            color=(154, 167, 183),
+        )
         dpg.add_text("Hotkeys while menu is open")
         for hint in HOTKEY_HINTS:
             dpg.add_text(hint, color=(154, 167, 183))
@@ -344,13 +424,19 @@ def main():
 
     with dpg.handler_registry():
         dpg.add_key_press_handler(callback=handle_axis_hotkey)
+        dpg.add_mouse_down_handler(callback=handle_mouse_down)
 
     insert_hotkey = keyboard.add_hotkey("insert", callback=toggle_window)
+    interact_hotkey = keyboard.add_hotkey(
+        INTERACT_TELEPORT_HOTKEY,
+        callback=hotkey_interact_teleport,
+    )
 
     try:
         dpg.start_dearpygui()
     finally:
         keyboard.remove_hotkey(insert_hotkey)
+        keyboard.remove_hotkey(interact_hotkey)
         dpg.destroy_context()
 
 
