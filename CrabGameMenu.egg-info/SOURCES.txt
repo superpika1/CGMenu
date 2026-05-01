@@ -1,0 +1,5 @@
+setup.py
+CrabGameMenu.egg-info/PKG-INFO
+CrabGameMenu.egg-info/SOURCES.txt
+CrabGameMenu.egg-info/dependency_links.txt
+CrabGameMenu.egg-info/top_level.txt

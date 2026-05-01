@@ -8,6 +8,7 @@ import pymem
 import pymem.process
 import time
 
+
 MENU_TITLE = "Crab Game Menu"
 MENU_TAG = "menu_window"
 POSITION_INPUT_TAG = "position_input"
