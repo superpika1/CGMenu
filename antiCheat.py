@@ -9,7 +9,8 @@ def run():
         try:
             pm = pymem.Pymem("Crab Game.exe")
         except pymem.exception.ProcessNotFound as exc:
-            raise RuntimeError("Crab Game.exe not found. Start the game first.") from exc
+            raise RuntimeError(
+                "Crab Game.exe not found. Start the game first.") from exc
 
         client = pymem.process.module_from_name(
             pm.process_handle,

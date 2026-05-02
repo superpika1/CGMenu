@@ -18,13 +18,17 @@ MENU_TAG = "menu_window"
 POSITION_INPUT_TAG = "position_input"
 CURRENT_POSITION_TAG = "current_position"
 STATUS_TAG = "status_text"
+THEME_SELECTOR_TAG = "theme_selector"
+INSERT_HINT_TAG = "insert_hint"
+INTERACT_HINT_TAG = "interact_hint"
+HP_HINT_TAG = "hp_hint"
 STATUS_OK_THEME = "status_ok_theme"
 STATUS_ERROR_THEME = "status_error_theme"
 APPLY_BUTTON_TAG = "apply_position_button"
 REFRESH_BUTTON_TAG = "refresh_position_button"
 TELEPORT_BUTTON_TAG = "teleport_interact_button"
-SET_HP_BUTTON_TAG = "set_hp_button"
-INFINITE_JUMP_BUTTON_TAG = "infinite_jump_button"
+SET_HP_TOGGLE_TAG = "set_hp_toggle"
+INFINITE_JUMP_TOGGLE_TAG = "infinite_jump_toggle"
 
 PLAYER_STATIC_OFFSET = 0x01A81BA8
 INTERACT_TELEPORT_POSITION = (0.678, -18.297, 12.257)
@@ -50,6 +54,200 @@ HOTKEY_HINTS = (
     "F11 / F12 = Z -/+ 1",
 )
 
+THEMES = {
+    "Midnight": {
+        "tag": "theme_midnight",
+        "window_bg": (19, 24, 31),
+        "child_bg": (24, 30, 38),
+        "popup_bg": (24, 30, 38),
+        "text": (235, 239, 244),
+        "button": (56, 102, 214),
+        "button_hovered": (77, 125, 236),
+        "button_active": (45, 86, 186),
+        "frame_bg": (31, 39, 49),
+        "frame_bg_hovered": (42, 51, 64),
+        "frame_bg_active": (49, 58, 72),
+        "border": (60, 74, 91),
+        "checkmark": (132, 182, 255),
+        "header": (36, 63, 122),
+        "header_hovered": (51, 82, 148),
+        "header_active": (42, 69, 128),
+        "hint": (154, 167, 183),
+    },
+    "Forest": {
+        "tag": "theme_forest",
+        "window_bg": (20, 29, 24),
+        "child_bg": (27, 39, 32),
+        "popup_bg": (27, 39, 32),
+        "text": (233, 240, 229),
+        "button": (57, 128, 86),
+        "button_hovered": (74, 149, 104),
+        "button_active": (46, 108, 72),
+        "frame_bg": (35, 48, 39),
+        "frame_bg_hovered": (46, 61, 51),
+        "frame_bg_active": (52, 70, 58),
+        "border": (85, 107, 91),
+        "checkmark": (164, 225, 183),
+        "header": (43, 95, 64),
+        "header_hovered": (57, 118, 81),
+        "header_active": (49, 104, 71),
+        "hint": (168, 185, 172),
+    },
+    "Ember": {
+        "tag": "theme_ember",
+        "window_bg": (31, 20, 18),
+        "child_bg": (41, 28, 25),
+        "popup_bg": (41, 28, 25),
+        "text": (245, 235, 228),
+        "button": (184, 87, 52),
+        "button_hovered": (208, 106, 66),
+        "button_active": (156, 70, 39),
+        "frame_bg": (54, 38, 33),
+        "frame_bg_hovered": (68, 47, 40),
+        "frame_bg_active": (77, 54, 45),
+        "border": (111, 76, 64),
+        "checkmark": (255, 191, 145),
+        "header": (130, 59, 36),
+        "header_hovered": (154, 72, 43),
+        "header_active": (139, 64, 38),
+        "hint": (202, 177, 165),
+    },
+    "Crimson": {
+        "tag": "theme_crimson",
+        "window_bg": (31, 18, 20),
+        "child_bg": (42, 24, 28),
+        "popup_bg": (42, 24, 28),
+        "text": (245, 235, 236),
+        "button": (200, 55, 70),
+        "button_hovered": (225, 75, 90),
+        "button_active": (165, 40, 55),
+        "frame_bg": (58, 32, 36),
+        "frame_bg_hovered": (72, 40, 45),
+        "frame_bg_active": (85, 48, 54),
+        "border": (120, 60, 70),
+        "checkmark": (255, 140, 150),
+        "header": (150, 35, 50),
+        "header_hovered": (175, 45, 60),
+        "header_active": (135, 30, 45),
+        "hint": (210, 170, 175),
+    },
+
+    "Ocean": {
+        "tag": "theme_ocean",
+        "window_bg": (18, 26, 33),
+        "child_bg": (25, 38, 48),
+        "popup_bg": (25, 38, 48),
+        "text": (230, 240, 245),
+        "button": (40, 120, 170),
+        "button_hovered": (60, 145, 200),
+        "button_active": (30, 95, 140),
+        "frame_bg": (32, 50, 62),
+        "frame_bg_hovered": (42, 65, 80),
+        "frame_bg_active": (50, 78, 95),
+        "border": (70, 110, 130),
+        "checkmark": (120, 210, 240),
+        "header": (30, 90, 130),
+        "header_hovered": (40, 110, 160),
+        "header_active": (25, 80, 120),
+        "hint": (160, 190, 200),
+    },
+    "CleanLight": {
+        "tag": "theme_clean_light",
+        "window_bg": (245, 246, 248),
+        "child_bg": (255, 255, 255),
+        "popup_bg": (255, 255, 255),
+        "text": (30, 30, 30),
+        "button": (80, 120, 220),
+        "button_hovered": (100, 140, 240),
+        "button_active": (60, 100, 200),
+        "frame_bg": (235, 237, 240),
+        "frame_bg_hovered": (225, 228, 232),
+        "frame_bg_active": (210, 214, 220),
+        "border": (200, 205, 210),
+        "checkmark": (80, 120, 220),
+        "header": (220, 225, 230),
+        "header_hovered": (210, 215, 220),
+        "header_active": (200, 205, 210),
+        "hint": (120, 120, 120),
+    },
+    "CleanDark": {
+        "tag": "theme_clean_dark",
+        "window_bg": (18, 18, 20),
+        "child_bg": (24, 24, 28),
+        "popup_bg": (24, 24, 28),
+        "text": (230, 230, 230),
+        "button": (90, 90, 95),
+        "button_hovered": (110, 110, 120),
+        "button_active": (70, 70, 75),
+        "frame_bg": (30, 30, 35),
+        "frame_bg_hovered": (40, 40, 45),
+        "frame_bg_active": (50, 50, 55),
+        "border": (60, 60, 70),
+        "checkmark": (130, 130, 140),
+        "header": (35, 35, 40),
+        "header_hovered": (45, 45, 50),
+        "header_active": (55, 55, 60),
+        "hint": (150, 150, 150),
+    },
+    "SoftPurple": {
+        "tag": "theme_soft_purple",
+        "window_bg": (24, 20, 30),
+        "child_bg": (32, 26, 40),
+        "popup_bg": (32, 26, 40),
+        "text": (238, 235, 245),
+        "button": (120, 85, 200),
+        "button_hovered": (140, 105, 220),
+        "button_active": (95, 65, 170),
+        "frame_bg": (40, 34, 52),
+        "frame_bg_hovered": (52, 44, 66),
+        "frame_bg_active": (60, 50, 78),
+        "border": (90, 80, 110),
+        "checkmark": (190, 160, 255),
+        "header": (75, 55, 120),
+        "header_hovered": (95, 70, 145),
+        "header_active": (65, 45, 105),
+        "hint": (170, 165, 190),
+    },
+    "SoftBeige": {
+        "tag": "theme_soft_beige",
+        "window_bg": (245, 238, 226),
+        "child_bg": (252, 248, 240),
+        "popup_bg": (252, 248, 240),
+        "text": (40, 35, 30),
+        "button": (180, 150, 120),
+        "button_hovered": (200, 170, 140),
+        "button_active": (150, 120, 95),
+        "frame_bg": (235, 225, 210),
+        "frame_bg_hovered": (225, 215, 200),
+        "frame_bg_active": (210, 200, 185),
+        "border": (190, 175, 160),
+        "checkmark": (160, 130, 100),
+        "header": (210, 195, 175),
+        "header_hovered": (220, 205, 185),
+        "header_active": (200, 185, 165),
+        "hint": (120, 110, 100),
+    },
+    "DarkRed": {
+        "tag": "theme_dark_red",
+        "window_bg": (18, 14, 16),
+        "child_bg": (26, 18, 20),
+        "popup_bg": (26, 18, 20),
+        "text": (240, 230, 232),
+        "button": (140, 35, 45),
+        "button_hovered": (165, 45, 60),
+        "button_active": (110, 25, 35),
+        "frame_bg": (35, 22, 24),
+        "frame_bg_hovered": (45, 28, 30),
+        "frame_bg_active": (55, 34, 36),
+        "border": (85, 45, 50),
+        "checkmark": (220, 90, 100),
+        "header": (95, 25, 35),
+        "header_hovered": (120, 35, 45),
+        "header_active": (80, 20, 30),
+        "hint": (180, 150, 155),
+    },
+}
+
 visible = False
 pm = None
 hp_freeze_enabled = False
@@ -61,6 +259,7 @@ infinite_jump_original_bytes = None
 infinite_jump_pid = None
 ui_status_queue = queue.SimpleQueue()
 ui_action_queue = queue.SimpleQueue()
+current_theme_name = "Midnight"
 SW_HIDE = 0
 SW_SHOW = 5
 WM_NCLBUTTONDOWN = 0x00A1
@@ -98,6 +297,10 @@ def flush_ui_actions():
         action, payload = ui_action_queue.get()
         if action == "sync_position":
             sync_position_ui(show_status=payload)
+        elif action == "sync_hp_toggle":
+            update_hp_toggle()
+        elif action == "sync_infinite_jump_toggle":
+            update_infinite_jump_toggle()
 
 
 def ensure_process():
@@ -162,11 +365,12 @@ def toggle_window():
 def is_interactive_item_hovered():
     interactive_tags = (
         POSITION_INPUT_TAG,
+        THEME_SELECTOR_TAG,
         APPLY_BUTTON_TAG,
         REFRESH_BUTTON_TAG,
         TELEPORT_BUTTON_TAG,
-        SET_HP_BUTTON_TAG,
-        INFINITE_JUMP_BUTTON_TAG,
+        SET_HP_TOGGLE_TAG,
+        INFINITE_JUMP_TOGGLE_TAG,
     )
     return any(dpg.is_item_hovered(tag) for tag in interactive_tags if dpg.does_item_exist(tag))
 
@@ -437,33 +641,26 @@ def hotkey_interact_teleport():
         print(f"Hotkey teleport failed: {exc}")
 
 
-def update_hp_button_label():
-    if not dpg.does_item_exist(SET_HP_BUTTON_TAG):
+def update_hp_toggle():
+    if threading.current_thread() is not threading.main_thread():
+        queue_ui_action("sync_hp_toggle")
         return
 
-    label = (
-        f"Freeze HP ON ({SET_HP_VALUE})"
-        if hp_freeze_enabled
-        else f"Freeze HP OFF ({SET_HP_VALUE})"
-    )
-    dpg.configure_item(SET_HP_BUTTON_TAG, label=label)
-
-
-def update_infinite_jump_button():
-    if not dpg.does_item_exist(INFINITE_JUMP_BUTTON_TAG):
+    if not dpg.does_item_exist(SET_HP_TOGGLE_TAG):
         return
 
-    if infinite_jump_enabled:
-        dpg.configure_item(
-            INFINITE_JUMP_BUTTON_TAG,
-            label="Infinite Jump ON",
-        )
+    dpg.set_value(SET_HP_TOGGLE_TAG, hp_freeze_enabled)
+
+
+def update_infinite_jump_toggle():
+    if threading.current_thread() is not threading.main_thread():
+        queue_ui_action("sync_infinite_jump_toggle")
         return
 
-    dpg.configure_item(
-        INFINITE_JUMP_BUTTON_TAG,
-        label="Infinite Jump OFF",
-    )
+    if not dpg.does_item_exist(INFINITE_JUMP_TOGGLE_TAG):
+        return
+
+    dpg.set_value(INFINITE_JUMP_TOGGLE_TAG, infinite_jump_enabled)
 
 
 def hp_freeze_worker():
@@ -475,20 +672,25 @@ def hp_freeze_worker():
         except Exception as exc:
             hp_freeze_enabled = False
             hp_freeze_stop_event.set()
+            update_hp_toggle()
             print(f"HP freeze failed: {exc}")
             return
 
         hp_freeze_stop_event.wait(HP_FREEZE_INTERVAL)
 
 
-def toggle_hp_freeze(update_status=True):
+def set_hp_freeze_enabled(enabled, update_status=True):
     global hp_freeze_enabled
 
     with hp_freeze_lock:
-        if hp_freeze_enabled:
+        if enabled == hp_freeze_enabled:
+            update_hp_toggle()
+            return hp_freeze_enabled
+
+        if not enabled:
             hp_freeze_enabled = False
             hp_freeze_stop_event.set()
-            update_hp_button_label()
+            update_hp_toggle()
             if update_status:
                 set_status("HP freeze disabled.")
             return False
@@ -497,16 +699,21 @@ def toggle_hp_freeze(update_status=True):
         hp_freeze_stop_event.clear()
         hp_freeze_enabled = True
         threading.Thread(target=hp_freeze_worker, daemon=True).start()
-        update_hp_button_label()
+        update_hp_toggle()
         if update_status:
             set_status(f"HP freeze enabled at {SET_HP_VALUE}.")
         return True
 
 
+def toggle_hp_freeze(update_status=True):
+    return set_hp_freeze_enabled(not hp_freeze_enabled, update_status=update_status)
+
+
 def apply_toggle_hp_freeze(sender=None, app_data=None, user_data=None):
     try:
-        toggle_hp_freeze(update_status=True)
+        set_hp_freeze_enabled(bool(app_data), update_status=True)
     except Exception as exc:
+        update_hp_toggle()
         set_status(f"Unable to toggle HP freeze: {exc}", is_error=True)
 
 
@@ -520,13 +727,18 @@ def hotkey_toggle_hp_freeze():
 
 
 def apply_infinite_jump(sender=None, app_data=None, user_data=None):
+    desired_state = bool(app_data)
+    if desired_state == infinite_jump_enabled:
+        update_infinite_jump_toggle()
+        return
+
     success, message = infiniteJump()
     if success:
-        update_infinite_jump_button()
+        update_infinite_jump_toggle()
         set_status(message)
         return
 
-    update_infinite_jump_button()
+    update_infinite_jump_toggle()
     set_status(message, is_error=True)
 
 
@@ -568,39 +780,80 @@ def handle_mouse_down(sender, app_data):
         begin_native_window_drag()
 
 
+def apply_theme(theme_name, update_status=False):
+    global current_theme_name
+
+    if theme_name not in THEMES:
+        theme_name = "Midnight"
+
+    current_theme_name = theme_name
+    theme = THEMES[theme_name]
+    dpg.bind_theme(theme["tag"])
+
+    if dpg.does_item_exist(THEME_SELECTOR_TAG):
+        current_value = dpg.get_value(THEME_SELECTOR_TAG)
+        if current_value != theme_name:
+            dpg.set_value(THEME_SELECTOR_TAG, theme_name)
+
+    hint_items = [INSERT_HINT_TAG, INTERACT_HINT_TAG, HP_HINT_TAG]
+    hint_items.extend(
+        f"hotkey_hint_{index}" for index in range(len(HOTKEY_HINTS)))
+    for item_tag in hint_items:
+        if dpg.does_item_exist(item_tag):
+            dpg.configure_item(item_tag, color=theme["hint"])
+
+    if update_status:
+        set_status(f"Theme changed to {theme_name}.")
+
+
+def apply_selected_theme(sender=None, app_data=None, user_data=None):
+    apply_theme(str(app_data), update_status=True)
+
+
 def build_theme():
-    with dpg.theme(tag="main_theme"):
-        with dpg.theme_component(dpg.mvAll):
-            dpg.add_theme_color(dpg.mvThemeCol_WindowBg,
-                                (19, 24, 31), category=dpg.mvThemeCat_Core)
-            dpg.add_theme_color(dpg.mvThemeCol_ChildBg,
-                                (24, 30, 38), category=dpg.mvThemeCat_Core)
-            dpg.add_theme_color(dpg.mvThemeCol_Text,
-                                (235, 239, 244), category=dpg.mvThemeCat_Core)
-            dpg.add_theme_color(dpg.mvThemeCol_Button,
-                                (56, 102, 214), category=dpg.mvThemeCat_Core)
-            dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered,
-                                (77, 125, 236), category=dpg.mvThemeCat_Core)
-            dpg.add_theme_color(dpg.mvThemeCol_ButtonActive,
-                                (45, 86, 186), category=dpg.mvThemeCat_Core)
-            dpg.add_theme_color(dpg.mvThemeCol_FrameBg,
-                                (31, 39, 49), category=dpg.mvThemeCat_Core)
-            dpg.add_theme_color(dpg.mvThemeCol_FrameBgHovered,
-                                (42, 51, 64), category=dpg.mvThemeCat_Core)
-            dpg.add_theme_color(dpg.mvThemeCol_FrameBgActive,
-                                (49, 58, 72), category=dpg.mvThemeCat_Core)
-            dpg.add_theme_color(dpg.mvThemeCol_Border,
-                                (60, 74, 91), category=dpg.mvThemeCat_Core)
-            dpg.add_theme_style(dpg.mvStyleVar_WindowPadding,
-                                18, 18, category=dpg.mvThemeCat_Core)
-            dpg.add_theme_style(dpg.mvStyleVar_FramePadding,
-                                10, 8, category=dpg.mvThemeCat_Core)
-            dpg.add_theme_style(dpg.mvStyleVar_ItemSpacing,
-                                10, 10, category=dpg.mvThemeCat_Core)
-            dpg.add_theme_style(dpg.mvStyleVar_FrameRounding,
-                                6, category=dpg.mvThemeCat_Core)
-            dpg.add_theme_style(dpg.mvStyleVar_WindowRounding,
-                                8, category=dpg.mvThemeCat_Core)
+    for theme in THEMES.values():
+        with dpg.theme(tag=theme["tag"]):
+            with dpg.theme_component(dpg.mvAll):
+                dpg.add_theme_color(dpg.mvThemeCol_WindowBg,
+                                    theme["window_bg"], category=dpg.mvThemeCat_Core)
+                dpg.add_theme_color(dpg.mvThemeCol_ChildBg,
+                                    theme["child_bg"], category=dpg.mvThemeCat_Core)
+                dpg.add_theme_color(dpg.mvThemeCol_PopupBg,
+                                    theme["popup_bg"], category=dpg.mvThemeCat_Core)
+                dpg.add_theme_color(dpg.mvThemeCol_Text,
+                                    theme["text"], category=dpg.mvThemeCat_Core)
+                dpg.add_theme_color(dpg.mvThemeCol_Button,
+                                    theme["button"], category=dpg.mvThemeCat_Core)
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered,
+                                    theme["button_hovered"], category=dpg.mvThemeCat_Core)
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive,
+                                    theme["button_active"], category=dpg.mvThemeCat_Core)
+                dpg.add_theme_color(dpg.mvThemeCol_FrameBg,
+                                    theme["frame_bg"], category=dpg.mvThemeCat_Core)
+                dpg.add_theme_color(dpg.mvThemeCol_FrameBgHovered,
+                                    theme["frame_bg_hovered"], category=dpg.mvThemeCat_Core)
+                dpg.add_theme_color(dpg.mvThemeCol_FrameBgActive,
+                                    theme["frame_bg_active"], category=dpg.mvThemeCat_Core)
+                dpg.add_theme_color(dpg.mvThemeCol_Border,
+                                    theme["border"], category=dpg.mvThemeCat_Core)
+                dpg.add_theme_color(dpg.mvThemeCol_CheckMark,
+                                    theme["checkmark"], category=dpg.mvThemeCat_Core)
+                dpg.add_theme_color(dpg.mvThemeCol_Header,
+                                    theme["header"], category=dpg.mvThemeCat_Core)
+                dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered,
+                                    theme["header_hovered"], category=dpg.mvThemeCat_Core)
+                dpg.add_theme_color(dpg.mvThemeCol_HeaderActive,
+                                    theme["header_active"], category=dpg.mvThemeCat_Core)
+                dpg.add_theme_style(dpg.mvStyleVar_WindowPadding,
+                                    18, 18, category=dpg.mvThemeCat_Core)
+                dpg.add_theme_style(dpg.mvStyleVar_FramePadding,
+                                    10, 8, category=dpg.mvThemeCat_Core)
+                dpg.add_theme_style(dpg.mvStyleVar_ItemSpacing,
+                                    10, 10, category=dpg.mvThemeCat_Core)
+                dpg.add_theme_style(dpg.mvStyleVar_FrameRounding,
+                                    6, category=dpg.mvThemeCat_Core)
+                dpg.add_theme_style(dpg.mvStyleVar_WindowRounding,
+                                    8, category=dpg.mvThemeCat_Core)
 
     with dpg.theme(tag=STATUS_OK_THEME):
         with dpg.theme_component(dpg.mvText):
@@ -622,10 +875,23 @@ def build_ui():
         no_resize=True,
         no_collapse=True,
         width=480,
-        height=350,
+        height=405,
     ):
-        dpg.add_text("Crab Game Position Editor")
-        dpg.add_text("Insert toggles the menu.", color=(154, 167, 183))
+        dpg.add_text("CGMenu")
+        dpg.add_text(
+            "Insert toggles the menu.",
+            tag=INSERT_HINT_TAG,
+            color=THEMES[current_theme_name]["hint"],
+        )
+        with dpg.group(horizontal=True):
+            dpg.add_text("Theme")
+            dpg.add_combo(
+                list(THEMES.keys()),
+                default_value=current_theme_name,
+                tag=THEME_SELECTOR_TAG,
+                width=170,
+                callback=apply_selected_theme,
+            )
         dpg.add_separator()
 
         dpg.add_text("Current Position: unavailable", tag=CURRENT_POSITION_TAG)
@@ -660,33 +926,35 @@ def build_ui():
                 height=38,
                 callback=apply_interact_teleport,
             )
-            dpg.add_button(
-                label=f"Freeze HP OFF ({SET_HP_VALUE})",
-                tag=SET_HP_BUTTON_TAG,
-                width=100,
-                height=38,
+            dpg.add_checkbox(
+                label=f"Freeze HP ({SET_HP_VALUE})",
+                tag=SET_HP_TOGGLE_TAG,
                 callback=apply_toggle_hp_freeze,
             )
-            dpg.add_button(
-                label="Infinite Jump OFF",
-                tag=INFINITE_JUMP_BUTTON_TAG,
-                width=100,
-                height=38,
+            dpg.add_checkbox(
+                label="Infinite Jump",
+                tag=INFINITE_JUMP_TOGGLE_TAG,
                 callback=apply_infinite_jump,
             )
 
         dpg.add_separator()
         dpg.add_text(
             f"{INTERACT_TELEPORT_HOTKEY.upper()} = Teleport to preset spot and press E",
-            color=(154, 167, 183),
+            tag=INTERACT_HINT_TAG,
+            color=THEMES[current_theme_name]["hint"],
         )
         dpg.add_text(
             f"{SET_HP_HOTKEY.upper()} = Toggle HP freeze at {SET_HP_VALUE}",
-            color=(154, 167, 183),
+            tag=HP_HINT_TAG,
+            color=THEMES[current_theme_name]["hint"],
         )
         dpg.add_text("Global Hotkeys")
-        for hint in HOTKEY_HINTS:
-            dpg.add_text(hint, color=(154, 167, 183))
+        for index, hint in enumerate(HOTKEY_HINTS):
+            dpg.add_text(
+                hint,
+                tag=f"hotkey_hint_{index}",
+                color=THEMES[current_theme_name]["hint"],
+            )
 
         dpg.add_spacer(height=8)
         dpg.add_text("Waiting for input.", tag=STATUS_TAG)
@@ -697,15 +965,15 @@ def main():
     dpg.create_context()
     build_theme()
     build_ui()
-    update_hp_button_label()
-    update_infinite_jump_button()
+    update_hp_toggle()
+    update_infinite_jump_toggle()
 
-    dpg.create_viewport(title=MENU_TITLE, width=480, height=350)
+    dpg.create_viewport(title=MENU_TITLE, width=480, height=405)
     dpg.set_viewport_decorated(False)
     dpg.set_viewport_resizable(False)
     dpg.set_viewport_always_top(True)
     dpg.setup_dearpygui()
-    dpg.bind_theme("main_theme")
+    apply_theme(current_theme_name)
     dpg.show_viewport()
     dpg.set_primary_window(MENU_TAG, True)
 
