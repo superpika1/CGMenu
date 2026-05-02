@@ -11,6 +11,7 @@ import pymem.process
 import time
 
 import antiCheat
+import themes
 
 
 MENU_TITLE = "Crab Game Menu"
@@ -29,6 +30,7 @@ REFRESH_BUTTON_TAG = "refresh_position_button"
 TELEPORT_BUTTON_TAG = "teleport_interact_button"
 SET_HP_TOGGLE_TAG = "set_hp_toggle"
 INFINITE_JUMP_TOGGLE_TAG = "infinite_jump_toggle"
+INFINITE_JUMP_HINT_TAG = "infinite_jump_hint"
 
 PLAYER_STATIC_OFFSET = 0x01A81BA8
 INTERACT_TELEPORT_POSITION = (0.678, -18.297, 12.257)
@@ -39,8 +41,10 @@ SET_HP_HOTKEY = "f5"
 SET_HP_VALUE = 100
 HP_FREEZE_INTERVAL = 0.05
 HP_POINTERS = [0x48, 0xB8, 0x28, 0x24]
+
 INFINITE_JUMP_PATTERN = rb"\x80\xBB.....\x74\x09\x80\xBB....."
 INFINITE_JUMP_PATCH_BYTES = b"\x90\x90\x90\x90\x90\x90\x90\x90\x90"
+INFINITE_JUMP_HOTKEY = "f4"
 
 AXIS_POINTERS = {
     "x": [0x480, 0x3A0],
@@ -54,199 +58,7 @@ HOTKEY_HINTS = (
     "F11 / F12 = Z -/+ 1",
 )
 
-THEMES = {
-    "Midnight": {
-        "tag": "theme_midnight",
-        "window_bg": (19, 24, 31),
-        "child_bg": (24, 30, 38),
-        "popup_bg": (24, 30, 38),
-        "text": (235, 239, 244),
-        "button": (56, 102, 214),
-        "button_hovered": (77, 125, 236),
-        "button_active": (45, 86, 186),
-        "frame_bg": (31, 39, 49),
-        "frame_bg_hovered": (42, 51, 64),
-        "frame_bg_active": (49, 58, 72),
-        "border": (60, 74, 91),
-        "checkmark": (132, 182, 255),
-        "header": (36, 63, 122),
-        "header_hovered": (51, 82, 148),
-        "header_active": (42, 69, 128),
-        "hint": (154, 167, 183),
-    },
-    "Forest": {
-        "tag": "theme_forest",
-        "window_bg": (20, 29, 24),
-        "child_bg": (27, 39, 32),
-        "popup_bg": (27, 39, 32),
-        "text": (233, 240, 229),
-        "button": (57, 128, 86),
-        "button_hovered": (74, 149, 104),
-        "button_active": (46, 108, 72),
-        "frame_bg": (35, 48, 39),
-        "frame_bg_hovered": (46, 61, 51),
-        "frame_bg_active": (52, 70, 58),
-        "border": (85, 107, 91),
-        "checkmark": (164, 225, 183),
-        "header": (43, 95, 64),
-        "header_hovered": (57, 118, 81),
-        "header_active": (49, 104, 71),
-        "hint": (168, 185, 172),
-    },
-    "Ember": {
-        "tag": "theme_ember",
-        "window_bg": (31, 20, 18),
-        "child_bg": (41, 28, 25),
-        "popup_bg": (41, 28, 25),
-        "text": (245, 235, 228),
-        "button": (184, 87, 52),
-        "button_hovered": (208, 106, 66),
-        "button_active": (156, 70, 39),
-        "frame_bg": (54, 38, 33),
-        "frame_bg_hovered": (68, 47, 40),
-        "frame_bg_active": (77, 54, 45),
-        "border": (111, 76, 64),
-        "checkmark": (255, 191, 145),
-        "header": (130, 59, 36),
-        "header_hovered": (154, 72, 43),
-        "header_active": (139, 64, 38),
-        "hint": (202, 177, 165),
-    },
-    "Crimson": {
-        "tag": "theme_crimson",
-        "window_bg": (31, 18, 20),
-        "child_bg": (42, 24, 28),
-        "popup_bg": (42, 24, 28),
-        "text": (245, 235, 236),
-        "button": (200, 55, 70),
-        "button_hovered": (225, 75, 90),
-        "button_active": (165, 40, 55),
-        "frame_bg": (58, 32, 36),
-        "frame_bg_hovered": (72, 40, 45),
-        "frame_bg_active": (85, 48, 54),
-        "border": (120, 60, 70),
-        "checkmark": (255, 140, 150),
-        "header": (150, 35, 50),
-        "header_hovered": (175, 45, 60),
-        "header_active": (135, 30, 45),
-        "hint": (210, 170, 175),
-    },
-
-    "Ocean": {
-        "tag": "theme_ocean",
-        "window_bg": (18, 26, 33),
-        "child_bg": (25, 38, 48),
-        "popup_bg": (25, 38, 48),
-        "text": (230, 240, 245),
-        "button": (40, 120, 170),
-        "button_hovered": (60, 145, 200),
-        "button_active": (30, 95, 140),
-        "frame_bg": (32, 50, 62),
-        "frame_bg_hovered": (42, 65, 80),
-        "frame_bg_active": (50, 78, 95),
-        "border": (70, 110, 130),
-        "checkmark": (120, 210, 240),
-        "header": (30, 90, 130),
-        "header_hovered": (40, 110, 160),
-        "header_active": (25, 80, 120),
-        "hint": (160, 190, 200),
-    },
-    "CleanLight": {
-        "tag": "theme_clean_light",
-        "window_bg": (245, 246, 248),
-        "child_bg": (255, 255, 255),
-        "popup_bg": (255, 255, 255),
-        "text": (30, 30, 30),
-        "button": (80, 120, 220),
-        "button_hovered": (100, 140, 240),
-        "button_active": (60, 100, 200),
-        "frame_bg": (235, 237, 240),
-        "frame_bg_hovered": (225, 228, 232),
-        "frame_bg_active": (210, 214, 220),
-        "border": (200, 205, 210),
-        "checkmark": (80, 120, 220),
-        "header": (220, 225, 230),
-        "header_hovered": (210, 215, 220),
-        "header_active": (200, 205, 210),
-        "hint": (120, 120, 120),
-    },
-    "CleanDark": {
-        "tag": "theme_clean_dark",
-        "window_bg": (18, 18, 20),
-        "child_bg": (24, 24, 28),
-        "popup_bg": (24, 24, 28),
-        "text": (230, 230, 230),
-        "button": (90, 90, 95),
-        "button_hovered": (110, 110, 120),
-        "button_active": (70, 70, 75),
-        "frame_bg": (30, 30, 35),
-        "frame_bg_hovered": (40, 40, 45),
-        "frame_bg_active": (50, 50, 55),
-        "border": (60, 60, 70),
-        "checkmark": (130, 130, 140),
-        "header": (35, 35, 40),
-        "header_hovered": (45, 45, 50),
-        "header_active": (55, 55, 60),
-        "hint": (150, 150, 150),
-    },
-    "SoftPurple": {
-        "tag": "theme_soft_purple",
-        "window_bg": (24, 20, 30),
-        "child_bg": (32, 26, 40),
-        "popup_bg": (32, 26, 40),
-        "text": (238, 235, 245),
-        "button": (120, 85, 200),
-        "button_hovered": (140, 105, 220),
-        "button_active": (95, 65, 170),
-        "frame_bg": (40, 34, 52),
-        "frame_bg_hovered": (52, 44, 66),
-        "frame_bg_active": (60, 50, 78),
-        "border": (90, 80, 110),
-        "checkmark": (190, 160, 255),
-        "header": (75, 55, 120),
-        "header_hovered": (95, 70, 145),
-        "header_active": (65, 45, 105),
-        "hint": (170, 165, 190),
-    },
-    "SoftBeige": {
-        "tag": "theme_soft_beige",
-        "window_bg": (245, 238, 226),
-        "child_bg": (252, 248, 240),
-        "popup_bg": (252, 248, 240),
-        "text": (40, 35, 30),
-        "button": (180, 150, 120),
-        "button_hovered": (200, 170, 140),
-        "button_active": (150, 120, 95),
-        "frame_bg": (235, 225, 210),
-        "frame_bg_hovered": (225, 215, 200),
-        "frame_bg_active": (210, 200, 185),
-        "border": (190, 175, 160),
-        "checkmark": (160, 130, 100),
-        "header": (210, 195, 175),
-        "header_hovered": (220, 205, 185),
-        "header_active": (200, 185, 165),
-        "hint": (120, 110, 100),
-    },
-    "DarkRed": {
-        "tag": "theme_dark_red",
-        "window_bg": (18, 14, 16),
-        "child_bg": (26, 18, 20),
-        "popup_bg": (26, 18, 20),
-        "text": (240, 230, 232),
-        "button": (140, 35, 45),
-        "button_hovered": (165, 45, 60),
-        "button_active": (110, 25, 35),
-        "frame_bg": (35, 22, 24),
-        "frame_bg_hovered": (45, 28, 30),
-        "frame_bg_active": (55, 34, 36),
-        "border": (85, 45, 50),
-        "checkmark": (220, 90, 100),
-        "header": (95, 25, 35),
-        "header_hovered": (120, 35, 45),
-        "header_active": (80, 20, 30),
-        "hint": (180, 150, 155),
-    },
-}
+THEMES = themes.THEMES
 
 visible = False
 pm = None
@@ -575,7 +387,7 @@ def infiniteJump():
 
 def teleport_and_press_interact(update_status=True, sync_ui=False):
     write_position(INTERACT_TELEPORT_POSITION)
-    time.sleep(0.5)
+    time.sleep(0.25)
     keyboard.press_and_release("e")
 
     if sync_ui:
@@ -661,6 +473,21 @@ def update_infinite_jump_toggle():
         return
 
     dpg.set_value(INFINITE_JUMP_TOGGLE_TAG, infinite_jump_enabled)
+
+
+def hotkey_toggle_infinite_jump():
+    try:
+        success, message = infiniteJump()
+        update_infinite_jump_toggle()
+        if not success:
+            print(message)
+            return
+
+        enabled = infinite_jump_enabled
+        state = "enabled" if enabled else "disabled"
+        print(f"Hotkey infinite jump {state}.")
+    except Exception as exc:
+        print(f"Hotkey infinite jump failed: {exc}")
 
 
 def hp_freeze_worker():
@@ -883,6 +710,11 @@ def build_ui():
             tag=INSERT_HINT_TAG,
             color=THEMES[current_theme_name]["hint"],
         )
+
+        dpg.add_text("Waiting for input.", tag=STATUS_TAG)
+        dpg.bind_item_theme(STATUS_TAG, STATUS_OK_THEME)
+
+        dpg.add_spacer(height=4)
         with dpg.group(horizontal=True):
             dpg.add_text("Theme")
             dpg.add_combo(
@@ -939,13 +771,18 @@ def build_ui():
 
         dpg.add_separator()
         dpg.add_text(
-            f"{INTERACT_TELEPORT_HOTKEY.upper()} = Teleport to preset spot and press E",
+            f"{INTERACT_TELEPORT_HOTKEY.upper()} = Ready Up",
             tag=INTERACT_HINT_TAG,
             color=THEMES[current_theme_name]["hint"],
         )
         dpg.add_text(
             f"{SET_HP_HOTKEY.upper()} = Toggle HP freeze at {SET_HP_VALUE}",
             tag=HP_HINT_TAG,
+            color=THEMES[current_theme_name]["hint"],
+        )
+        dpg.add_text(
+            f"{INFINITE_JUMP_HOTKEY.upper()} = Toggle infinite jump",
+            tag=INFINITE_JUMP_HINT_TAG,
             color=THEMES[current_theme_name]["hint"],
         )
         dpg.add_text("Global Hotkeys")
@@ -955,10 +792,6 @@ def build_ui():
                 tag=f"hotkey_hint_{index}",
                 color=THEMES[current_theme_name]["hint"],
             )
-
-        dpg.add_spacer(height=8)
-        dpg.add_text("Waiting for input.", tag=STATUS_TAG)
-        dpg.bind_item_theme(STATUS_TAG, STATUS_OK_THEME)
 
 
 def main():
@@ -991,6 +824,10 @@ def main():
         SET_HP_HOTKEY,
         callback=hotkey_toggle_hp_freeze,
     )
+    infinite_jump_hotkey = keyboard.add_hotkey(
+        INFINITE_JUMP_HOTKEY,
+        callback=hotkey_toggle_infinite_jump
+    )
     nudge_hotkeys = [
         keyboard.add_hotkey(
             "f7", callback=lambda: hotkey_nudge_axis("x", -1.0)),
@@ -1017,6 +854,7 @@ def main():
         keyboard.remove_hotkey(insert_hotkey)
         keyboard.remove_hotkey(interact_hotkey)
         keyboard.remove_hotkey(set_hp_hotkey)
+        keyboard.remove_hotkey(infinite_jump_hotkey)
         for hotkey in nudge_hotkeys:
             keyboard.remove_hotkey(hotkey)
         dpg.destroy_context()
