@@ -19,10 +19,16 @@ STATUS_ERROR_THEME = "status_error_theme"
 APPLY_BUTTON_TAG = "apply_position_button"
 REFRESH_BUTTON_TAG = "refresh_position_button"
 TELEPORT_BUTTON_TAG = "teleport_interact_button"
+SET_HP_BUTTON_TAG = "set_hp_button"
 
 PLAYER_STATIC_OFFSET = 0x01A81BA8
 INTERACT_TELEPORT_POSITION = (0.678, -18.297, 12.257)
 INTERACT_TELEPORT_HOTKEY = "f6"
+
+PLAYER_STATIC_OFFSET_2 = 0X01D83FD0
+SET_HP_HOTKEY = "f5"
+SET_HP_VALUE = 100
+HP_POINTERS = [0x48, 0xB8, 0x28, 0x24]
 
 AXIS_POINTERS = {
     "x": [0x480, 0x3A0],
@@ -117,6 +123,7 @@ def is_interactive_item_hovered():
         APPLY_BUTTON_TAG,
         REFRESH_BUTTON_TAG,
         TELEPORT_BUTTON_TAG,
+        SET_HP_BUTTON_TAG,
     )
     return any(dpg.is_item_hovered(tag) for tag in interactive_tags if dpg.does_item_exist(tag))
 
@@ -136,6 +143,48 @@ def read_pointer_chain(process, base_addr, static_offset, offsets):
         address = process.read_longlong(address)
         address += offset
     return address
+
+
+def get_hp_addresses():
+    global pm
+
+    process = ensure_process()
+    if process is None:
+        raise RuntimeError("Crab Game is not running.")
+
+    try:
+        module = pymem.process.module_from_name(
+            process.process_handle, "GameAssembly.dll")
+    except Exception as exc:
+        pm = None
+        raise RuntimeError(f"Lost connection to Crab Game: {exc}") from exc
+
+    if module is None:
+        raise RuntimeError("GameAssembly.dll was not found.")
+
+    base_address = module.lpBaseOfDll
+    return read_pointer_chain(
+        process,
+        base_address,
+        PLAYER_STATIC_OFFSET_2,
+        HP_POINTERS
+    )
+
+
+def read_hp():
+    process = ensure_process()
+    if process is None:
+        raise RuntimeError("Crab Game is not running.")
+
+    addresses = get_hp_addresses()
+    return process.read_int(addresses)
+
+
+def write_hp(value):
+    process = ensure_process()
+    address = get_hp_addresses()
+    process.write_int(address, int(value))
+    set_status(f"HP set to {value}")
 
 
 def get_axis_addresses():
@@ -248,6 +297,21 @@ def hotkey_interact_teleport():
         )
     except Exception as exc:
         print(f"Hotkey teleport failed: {exc}")
+
+
+def apply_set_hp(sender=None, app_data=None, user_data=None):
+    try:
+        write_hp(SET_HP_VALUE)
+    except Exception as exc:
+        set_status(f"Unable to set HP: {exc}", is_error=True)
+
+
+def hotkey_set_hp():
+    try:
+        write_hp(SET_HP_VALUE)
+        print(f"Hotkey set HP -> {SET_HP_VALUE}.")
+    except Exception as exc:
+        print(f"Hotkey set HP failed: {exc}")
 
 
 def nudge_axis(axis, delta):
@@ -385,17 +449,29 @@ def build_ui():
             )
 
         dpg.add_spacer(height=4)
-        dpg.add_button(
-            label="Teleport To Interact Spot + Press E",
-            tag=TELEPORT_BUTTON_TAG,
-            width=430,
-            height=38,
-            callback=apply_interact_teleport,
-        )
+        with dpg.group(horizontal=True):
+            dpg.add_button(
+                label="Teleport To Interact Spot + Press E",
+                tag=TELEPORT_BUTTON_TAG,
+                width=320,
+                height=38,
+                callback=apply_interact_teleport,
+            )
+            dpg.add_button(
+                label=f"Set HP ({SET_HP_VALUE})",
+                tag=SET_HP_BUTTON_TAG,
+                width=100,
+                height=38,
+                callback=apply_set_hp,
+            )
 
         dpg.add_separator()
         dpg.add_text(
             f"{INTERACT_TELEPORT_HOTKEY.upper()} = Teleport to preset spot and press E",
+            color=(154, 167, 183),
+        )
+        dpg.add_text(
+            f"{SET_HP_HOTKEY.upper()} = Set HP to {SET_HP_VALUE}",
             color=(154, 167, 183),
         )
         dpg.add_text("Hotkeys while menu is open")
@@ -432,12 +508,17 @@ def main():
         INTERACT_TELEPORT_HOTKEY,
         callback=hotkey_interact_teleport,
     )
+    set_hp_hotkey = keyboard.add_hotkey(
+        SET_HP_HOTKEY,
+        callback=hotkey_set_hp,
+    )
 
     try:
         dpg.start_dearpygui()
     finally:
         keyboard.remove_hotkey(insert_hotkey)
         keyboard.remove_hotkey(interact_hotkey)
+        keyboard.remove_hotkey(set_hp_hotkey)
         dpg.destroy_context()
 
 
