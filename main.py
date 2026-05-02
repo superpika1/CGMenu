@@ -28,8 +28,8 @@ from memory_utils import (
 
 MENU_TITLE = "Crab Game Menu"
 DEFAULT_THEME_NAME = "Midnight"
-VIEWPORT_WIDTH = 480
-VIEWPORT_HEIGHT = 435
+VIEWPORT_WIDTH = 860
+VIEWPORT_HEIGHT = 390
 MENU_TAG = "menu_window"
 POSITION_INPUT_TAG = "position_input"
 CURRENT_POSITION_TAG = "current_position"
@@ -61,6 +61,9 @@ HP_POINTERS = [0x48, 0xB8, 0x28, 0x24]
 
 INFINITE_JUMP_HOTKEY = "f4"
 NO_KNOCKBACK_HOTKEY = "f3"
+
+MENU_TOGGLE_HOTKEY = "insert"
+menu_hotkey_handle = None
 
 AXIS_POINTERS = {
     "x": [0x480, 0x3A0],
@@ -107,6 +110,32 @@ SW_HIDE = 0
 SW_SHOW = 5
 WM_NCLBUTTONDOWN = 0x00A1
 HTCAPTION = 2
+
+
+def register_menu_hotkey(new_key):
+    global menu_hotkey_handle, MENU_TOGGLE_HOTKEY
+
+    try:
+        new_handle = keyboard.add_hotkey(new_key, callback=toggle_window)
+
+        if menu_hotkey_handle is not None:
+            keyboard.remove_hotkey(menu_hotkey_handle)
+
+        menu_hotkey_handle = new_handle
+        MENU_TOGGLE_HOTKEY = new_key
+
+        set_status(f"Menu toggle key set to {new_key.upper()}")
+
+    except Exception as e:
+        set_status(f"Failed to bind hotkey: {e}", is_error=True)
+
+
+def is_valid_hotkey(hotkey: str) -> bool:
+    try:
+        keyboard.parse_hotkey(hotkey)
+        return True
+    except Exception:
+        return False
 
 
 def set_status(message, is_error=False):
@@ -405,6 +434,22 @@ def sync_position_ui(show_status=True):
         set_status(f"Unable to read position: {exc}", is_error=True)
 
 
+def apply_menu_hotkey(sender=None, app_data=None, user_data=None):
+    try:
+        key = dpg.get_value("menu_key_input").strip().lower()
+
+        if not key:
+            raise ValueError("Key cannot be empty")
+
+        if not is_valid_hotkey(key):
+            raise ValueError("Invalid key format")
+
+        register_menu_hotkey(key)
+
+    except Exception as e:
+        set_status(f"Invalid hotkey: {e}", is_error=True)
+
+
 def apply_position(sender=None, app_data=None, user_data=None):
     try:
         position = parse_position_input(dpg.get_value(POSITION_INPUT_TAG))
@@ -674,6 +719,8 @@ def build_theme():
                                     theme["frame_bg_active"], category=dpg.mvThemeCat_Core)
                 dpg.add_theme_color(dpg.mvThemeCol_Border,
                                     theme["border"], category=dpg.mvThemeCat_Core)
+                dpg.add_theme_color(dpg.mvThemeCol_Separator,
+                                    theme["border"], category=dpg.mvThemeCat_Core)
                 dpg.add_theme_color(dpg.mvThemeCol_CheckMark,
                                     theme["checkmark"], category=dpg.mvThemeCat_Core)
                 dpg.add_theme_color(dpg.mvThemeCol_Header,
@@ -683,15 +730,25 @@ def build_theme():
                 dpg.add_theme_color(dpg.mvThemeCol_HeaderActive,
                                     theme["header_active"], category=dpg.mvThemeCat_Core)
                 dpg.add_theme_style(dpg.mvStyleVar_WindowPadding,
-                                    18, 18, category=dpg.mvThemeCat_Core)
+                                    20, 20, category=dpg.mvThemeCat_Core)
                 dpg.add_theme_style(dpg.mvStyleVar_FramePadding,
-                                    10, 8, category=dpg.mvThemeCat_Core)
+                                    12, 9, category=dpg.mvThemeCat_Core)
                 dpg.add_theme_style(dpg.mvStyleVar_ItemSpacing,
-                                    10, 10, category=dpg.mvThemeCat_Core)
+                                    12, 12, category=dpg.mvThemeCat_Core)
+                dpg.add_theme_style(dpg.mvStyleVar_ItemInnerSpacing,
+                                    8, 6, category=dpg.mvThemeCat_Core)
                 dpg.add_theme_style(dpg.mvStyleVar_FrameRounding,
-                                    6, category=dpg.mvThemeCat_Core)
-                dpg.add_theme_style(dpg.mvStyleVar_WindowRounding,
                                     8, category=dpg.mvThemeCat_Core)
+                dpg.add_theme_style(dpg.mvStyleVar_WindowRounding,
+                                    10, category=dpg.mvThemeCat_Core)
+                dpg.add_theme_style(dpg.mvStyleVar_ChildRounding,
+                                    10, category=dpg.mvThemeCat_Core)
+                dpg.add_theme_style(dpg.mvStyleVar_FrameBorderSize,
+                                    1, category=dpg.mvThemeCat_Core)
+                dpg.add_theme_style(dpg.mvStyleVar_ChildBorderSize,
+                                    1, category=dpg.mvThemeCat_Core)
+                dpg.add_theme_style(dpg.mvStyleVar_WindowBorderSize,
+                                    1, category=dpg.mvThemeCat_Core)
 
     with dpg.theme(tag=STATUS_OK_THEME):
         with dpg.theme_component(dpg.mvText):
@@ -715,104 +772,130 @@ def build_ui():
         width=VIEWPORT_WIDTH,
         height=VIEWPORT_HEIGHT,
     ):
-        dpg.add_text("CGMenu")
-        dpg.add_text(
-            "Insert toggles the menu.",
-            tag=INSERT_HINT_TAG,
-            color=THEMES[current_theme_name]["hint"],
-        )
-
-        dpg.add_text("Waiting for input.", tag=STATUS_TAG)
-        dpg.bind_item_theme(STATUS_TAG, STATUS_OK_THEME)
-
-        dpg.add_spacer(height=4)
         with dpg.group(horizontal=True):
-            dpg.add_text("Theme")
-            dpg.add_combo(
-                list(THEMES.keys()),
-                default_value=current_theme_name,
-                tag=THEME_SELECTOR_TAG,
-                width=170,
-                callback=apply_selected_theme,
-            )
+            with dpg.group():
+                dpg.add_text("CGMenu")
+                dpg.add_text(
+                    "Insert toggles the menu.",
+                    tag=INSERT_HINT_TAG,
+                    color=THEMES[current_theme_name]["hint"],
+                )
+                dpg.add_text("Menu Toggle Key")
+                dpg.add_input_text(
+                    tag="menu_key_input",
+                    width=150,
+                    hint="e.g. insert, f1, home",
+                    on_enter=True,
+                    callback=apply_menu_hotkey,
+                )
+            dpg.add_spacer(width=120)
+            with dpg.group():
+                dpg.add_text("Status")
+                dpg.add_text("Waiting for input.", tag=STATUS_TAG)
+                dpg.bind_item_theme(STATUS_TAG, STATUS_OK_THEME)
+            dpg.add_spacer(width=36)
+            with dpg.group():
+                dpg.add_text("Theme")
+                dpg.add_combo(
+                    list(THEMES.keys()),
+                    default_value=current_theme_name,
+                    tag=THEME_SELECTOR_TAG,
+                    width=185,
+                    callback=apply_selected_theme,
+                )
+
+        dpg.add_spacer(height=6)
         dpg.add_separator()
-
-        dpg.add_text("Current Position: unavailable", tag=CURRENT_POSITION_TAG)
-        dpg.add_spacer(height=4)
-
-        dpg.add_text("Target Position (x, y, z)")
-        dpg.add_input_text(
-            tag=POSITION_INPUT_TAG,
-            width=430,
-            hint="Example: 125.0, 18.5, -44.25",
-            on_enter=True,
-            callback=apply_position,
-        )
-
-        with dpg.group(horizontal=True):
-            dpg.add_button(label="Apply Position", tag=APPLY_BUTTON_TAG, width=210,
-                           height=34, callback=apply_position)
-            dpg.add_button(
-                label="Refresh Current",
-                tag=REFRESH_BUTTON_TAG,
-                width=210,
-                height=34,
-                callback=lambda sender, app_data, user_data: sync_position_ui(),
-            )
-
-        dpg.add_spacer(height=4)
+        dpg.add_spacer(height=6)
         with dpg.group(horizontal=True):
             dpg.add_button(
                 label="Ready Up",
                 tag=TELEPORT_BUTTON_TAG,
-                width=210,
-                height=38,
+                width=280,
+                height=40,
                 callback=apply_interact_teleport,
             )
-            dpg.add_checkbox(
-                label=f"Freeze HP ({SET_HP_VALUE})",
-                tag=SET_HP_TOGGLE_TAG,
-                callback=apply_toggle_hp_freeze,
+            dpg.add_button(
+                label="Apply Position",
+                tag=APPLY_BUTTON_TAG,
+                width=180,
+                height=40,
+                callback=apply_position,
             )
-            dpg.add_checkbox(
-                label="Infinite Jump",
-                tag=INFINITE_JUMP_TOGGLE_TAG,
-                callback=apply_infinite_jump,
+            dpg.add_button(
+                label="Refresh Current",
+                tag=REFRESH_BUTTON_TAG,
+                width=180,
+                height=40,
+                callback=lambda sender, app_data, user_data: sync_position_ui(),
             )
-        dpg.add_checkbox(
-            label="No Knockback",
-            tag=NO_KNOCKBACK_TOGGLE_TAG,
-            callback=apply_no_knockback,
-        )
 
-        dpg.add_separator()
-        dpg.add_text(
-            f"{NO_KNOCKBACK_HOTKEY.upper()} = Toggle no knockback",
-            tag=NO_KNOCKBACK_HINT_TAG,
-            color=THEMES[current_theme_name]["hint"],
-        )
-        dpg.add_text(
-            f"{INTERACT_TELEPORT_HOTKEY.upper()} = Ready Up",
-            tag=INTERACT_HINT_TAG,
-            color=THEMES[current_theme_name]["hint"],
-        )
-        dpg.add_text(
-            f"{SET_HP_HOTKEY.upper()} = Toggle HP freeze at {SET_HP_VALUE}",
-            tag=HP_HINT_TAG,
-            color=THEMES[current_theme_name]["hint"],
-        )
-        dpg.add_text(
-            f"{INFINITE_JUMP_HOTKEY.upper()} = Toggle infinite jump",
-            tag=INFINITE_JUMP_HINT_TAG,
-            color=THEMES[current_theme_name]["hint"],
-        )
-        dpg.add_text("Global Hotkeys")
-        for index, hint in enumerate(HOTKEY_HINTS):
-            dpg.add_text(
-                hint,
-                tag=f"hotkey_hint_{index}",
-                color=THEMES[current_theme_name]["hint"],
-            )
+        dpg.add_spacer(height=10)
+        with dpg.group(horizontal=True):
+            with dpg.group():
+                dpg.add_text("Position Controls")
+                dpg.add_text("Current Position: unavailable",
+                             tag=CURRENT_POSITION_TAG)
+                dpg.add_spacer(height=2)
+                dpg.add_text("Target Position (x, y, z)")
+                dpg.add_input_text(
+                    tag=POSITION_INPUT_TAG,
+                    width=410,
+                    hint="Example: 125.0, 18.5, -44.25",
+                    on_enter=True,
+                    callback=apply_position,
+                )
+                dpg.add_spacer(height=10)
+                dpg.add_text("Movement Hotkeys")
+                for index, hint in enumerate(HOTKEY_HINTS):
+                    dpg.add_text(
+                        hint,
+                        tag=f"hotkey_hint_{index}",
+                        color=THEMES[current_theme_name]["hint"],
+                    )
+
+            dpg.add_spacer(width=36)
+
+            with dpg.group():
+                dpg.add_text("Quick Toggles")
+                with dpg.group(horizontal=True):
+                    dpg.add_checkbox(
+                        label=f"Freeze HP ({SET_HP_VALUE})",
+                        tag=SET_HP_TOGGLE_TAG,
+                        callback=apply_toggle_hp_freeze,
+                    )
+                    dpg.add_checkbox(
+                        label="Infinite Jump",
+                        tag=INFINITE_JUMP_TOGGLE_TAG,
+                        callback=apply_infinite_jump,
+                    )
+                dpg.add_checkbox(
+                    label="No Knockback",
+                    tag=NO_KNOCKBACK_TOGGLE_TAG,
+                    callback=apply_no_knockback,
+                )
+                dpg.add_spacer(height=10)
+                dpg.add_text("Feature Hotkeys")
+                dpg.add_text(
+                    f"{INTERACT_TELEPORT_HOTKEY.upper()} = Ready Up",
+                    tag=INTERACT_HINT_TAG,
+                    color=THEMES[current_theme_name]["hint"],
+                )
+                dpg.add_text(
+                    f"{SET_HP_HOTKEY.upper()} = Toggle HP freeze at {SET_HP_VALUE}",
+                    tag=HP_HINT_TAG,
+                    color=THEMES[current_theme_name]["hint"],
+                )
+                dpg.add_text(
+                    f"{INFINITE_JUMP_HOTKEY.upper()} = Toggle infinite jump",
+                    tag=INFINITE_JUMP_HINT_TAG,
+                    color=THEMES[current_theme_name]["hint"],
+                )
+                dpg.add_text(
+                    f"{NO_KNOCKBACK_HOTKEY.upper()} = Toggle no knockback",
+                    tag=NO_KNOCKBACK_HINT_TAG,
+                    color=THEMES[current_theme_name]["hint"],
+                )
 
 
 def main():
@@ -841,7 +924,7 @@ def main():
     with dpg.handler_registry():
         dpg.add_mouse_down_handler(callback=handle_mouse_down)
 
-    insert_hotkey = keyboard.add_hotkey("insert", callback=toggle_window)
+    register_menu_hotkey(MENU_TOGGLE_HOTKEY)
     interact_hotkey = keyboard.add_hotkey(
         INTERACT_TELEPORT_HOTKEY,
         callback=hotkey_interact_teleport,
@@ -879,7 +962,7 @@ def main():
             dpg.render_dearpygui_frame()
     finally:
         hp_freeze_stop_event.set()
-        keyboard.remove_hotkey(insert_hotkey)
+        keyboard.remove_hotkey(menu_hotkey_handle)
         keyboard.remove_hotkey(interact_hotkey)
         keyboard.remove_hotkey(set_hp_hotkey)
         keyboard.remove_hotkey(infinite_jump_hotkey)
