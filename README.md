@@ -1,4 +1,4 @@
-# CGMENU
+# CGMenu
 
 ## Project Overview
 Crab Game Menu is an interactive menu system designed for the popular game Crab Game. It provides customizable settings and user-friendly navigation to enhance the gaming experience.
