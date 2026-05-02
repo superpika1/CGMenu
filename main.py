@@ -1,6 +1,7 @@
 import ctypes
 import ctypes.wintypes
 import re
+import threading
 
 import dearpygui.dearpygui as dpg
 import keyboard
@@ -28,6 +29,7 @@ INTERACT_TELEPORT_HOTKEY = "f6"
 PLAYER_STATIC_OFFSET_2 = 0X01D83FD0
 SET_HP_HOTKEY = "f5"
 SET_HP_VALUE = 100
+HP_FREEZE_INTERVAL = 0.05
 HP_POINTERS = [0x48, 0xB8, 0x28, 0x24]
 
 AXIS_POINTERS = {
@@ -44,6 +46,9 @@ HOTKEY_HINTS = (
 
 visible = False
 pm = None
+hp_freeze_enabled = False
+hp_freeze_stop_event = threading.Event()
+hp_freeze_lock = threading.Lock()
 SW_HIDE = 0
 SW_SHOW = 5
 WM_NCLBUTTONDOWN = 0x00A1
@@ -180,11 +185,12 @@ def read_hp():
     return process.read_int(addresses)
 
 
-def write_hp(value):
+def write_hp(value, update_status=True):
     process = ensure_process()
     address = get_hp_addresses()
     process.write_int(address, int(value))
-    set_status(f"HP set to {value}")
+    if update_status:
+        set_status(f"HP set to {value}")
 
 
 def get_axis_addresses():
@@ -299,19 +305,69 @@ def hotkey_interact_teleport():
         print(f"Hotkey teleport failed: {exc}")
 
 
-def apply_set_hp(sender=None, app_data=None, user_data=None):
-    try:
-        write_hp(SET_HP_VALUE)
-    except Exception as exc:
-        set_status(f"Unable to set HP: {exc}", is_error=True)
+def update_hp_button_label():
+    if not dpg.does_item_exist(SET_HP_BUTTON_TAG):
+        return
+
+    label = (
+        f"Freeze HP ON ({SET_HP_VALUE})"
+        if hp_freeze_enabled
+        else f"Freeze HP OFF ({SET_HP_VALUE})"
+    )
+    dpg.configure_item(SET_HP_BUTTON_TAG, label=label)
 
 
-def hotkey_set_hp():
+def hp_freeze_worker():
+    global hp_freeze_enabled
+
+    while not hp_freeze_stop_event.is_set():
+        try:
+            write_hp(SET_HP_VALUE, update_status=False)
+        except Exception as exc:
+            hp_freeze_enabled = False
+            hp_freeze_stop_event.set()
+            print(f"HP freeze failed: {exc}")
+            return
+
+        hp_freeze_stop_event.wait(HP_FREEZE_INTERVAL)
+
+
+def toggle_hp_freeze(update_status=True):
+    global hp_freeze_enabled
+
+    with hp_freeze_lock:
+        if hp_freeze_enabled:
+            hp_freeze_enabled = False
+            hp_freeze_stop_event.set()
+            update_hp_button_label()
+            if update_status:
+                set_status("HP freeze disabled.")
+            return False
+
+        write_hp(SET_HP_VALUE, update_status=False)
+        hp_freeze_stop_event.clear()
+        hp_freeze_enabled = True
+        threading.Thread(target=hp_freeze_worker, daemon=True).start()
+        update_hp_button_label()
+        if update_status:
+            set_status(f"HP freeze enabled at {SET_HP_VALUE}.")
+        return True
+
+
+def apply_toggle_hp_freeze(sender=None, app_data=None, user_data=None):
     try:
-        write_hp(SET_HP_VALUE)
-        print(f"Hotkey set HP -> {SET_HP_VALUE}.")
+        toggle_hp_freeze(update_status=True)
     except Exception as exc:
-        print(f"Hotkey set HP failed: {exc}")
+        set_status(f"Unable to toggle HP freeze: {exc}", is_error=True)
+
+
+def hotkey_toggle_hp_freeze():
+    try:
+        enabled = toggle_hp_freeze(update_status=False)
+        state = "enabled" if enabled else "disabled"
+        print(f"Hotkey HP freeze {state} at {SET_HP_VALUE}.")
+    except Exception as exc:
+        print(f"Hotkey HP freeze failed: {exc}")
 
 
 def nudge_axis(axis, delta):
@@ -458,11 +514,11 @@ def build_ui():
                 callback=apply_interact_teleport,
             )
             dpg.add_button(
-                label=f"Set HP ({SET_HP_VALUE})",
+                label=f"Freeze HP OFF ({SET_HP_VALUE})",
                 tag=SET_HP_BUTTON_TAG,
                 width=100,
                 height=38,
-                callback=apply_set_hp,
+                callback=apply_toggle_hp_freeze,
             )
 
         dpg.add_separator()
@@ -471,7 +527,7 @@ def build_ui():
             color=(154, 167, 183),
         )
         dpg.add_text(
-            f"{SET_HP_HOTKEY.upper()} = Set HP to {SET_HP_VALUE}",
+            f"{SET_HP_HOTKEY.upper()} = Toggle HP freeze at {SET_HP_VALUE}",
             color=(154, 167, 183),
         )
         dpg.add_text("Hotkeys while menu is open")
@@ -510,12 +566,13 @@ def main():
     )
     set_hp_hotkey = keyboard.add_hotkey(
         SET_HP_HOTKEY,
-        callback=hotkey_set_hp,
+        callback=hotkey_toggle_hp_freeze,
     )
 
     try:
         dpg.start_dearpygui()
     finally:
+        hp_freeze_stop_event.set()
         keyboard.remove_hotkey(insert_hotkey)
         keyboard.remove_hotkey(interact_hotkey)
         keyboard.remove_hotkey(set_hp_hotkey)
