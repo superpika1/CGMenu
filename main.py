@@ -31,6 +31,8 @@ TELEPORT_BUTTON_TAG = "teleport_interact_button"
 SET_HP_TOGGLE_TAG = "set_hp_toggle"
 INFINITE_JUMP_TOGGLE_TAG = "infinite_jump_toggle"
 INFINITE_JUMP_HINT_TAG = "infinite_jump_hint"
+NO_KNOCKBACK_TOGGLE_TAG = "no_knockback_toggle"
+NO_KNOCKBACK_HINT_TAG = "no_knockback_hint"
 
 PLAYER_STATIC_OFFSET = 0x01A81BA8
 INTERACT_TELEPORT_POSITION = (0.678, -18.297, 12.257)
@@ -45,6 +47,13 @@ HP_POINTERS = [0x48, 0xB8, 0x28, 0x24]
 INFINITE_JUMP_PATTERN = rb"\x80\xBB.....\x74\x09\x80\xBB....."
 INFINITE_JUMP_PATCH_BYTES = b"\x90\x90\x90\x90\x90\x90\x90\x90\x90"
 INFINITE_JUMP_HOTKEY = "f4"
+NO_KNOCKBACK_PATTERN = (
+    rb"\x48\x89\x5C\x24.\x48\x89\x74\x24.\x57\x48\x83\xEC."
+    rb"\x80\x3D.....\x48\x8B\xF2\x48\x8B\xD9\x75.\x48\x8D\x0D...."
+    rb"\xE8....\x48\x8D\x0D....\xE8....\xC6\x05.....\x48\x8B\x7B"
+)
+NO_KNOCKBACK_PATCH_BYTES = b"\xC3\x90\x90\x90\x90"
+NO_KNOCKBACK_HOTKEY = "f3"
 
 AXIS_POINTERS = {
     "x": [0x480, 0x3A0],
@@ -69,6 +78,10 @@ infinite_jump_enabled = False
 infinite_jump_address = None
 infinite_jump_original_bytes = None
 infinite_jump_pid = None
+no_knockback_enabled = False
+no_knockback_address = None
+no_knockback_original_bytes = None
+no_knockback_pid = None
 ui_status_queue = queue.SimpleQueue()
 ui_action_queue = queue.SimpleQueue()
 current_theme_name = "Midnight"
@@ -113,6 +126,8 @@ def flush_ui_actions():
             update_hp_toggle()
         elif action == "sync_infinite_jump_toggle":
             update_infinite_jump_toggle()
+        elif action == "sync_no_knockback_toggle":
+            update_no_knockback_toggle()
 
 
 def ensure_process():
@@ -183,6 +198,7 @@ def is_interactive_item_hovered():
         TELEPORT_BUTTON_TAG,
         SET_HP_TOGGLE_TAG,
         INFINITE_JUMP_TOGGLE_TAG,
+        NO_KNOCKBACK_TOGGLE_TAG,
     )
     return any(dpg.is_item_hovered(tag) for tag in interactive_tags if dpg.does_item_exist(tag))
 
@@ -307,6 +323,18 @@ def reset_infinite_jump_state():
     infinite_jump_pid = None
 
 
+def reset_no_knockback_state():
+    global no_knockback_enabled
+    global no_knockback_address
+    global no_knockback_original_bytes
+    global no_knockback_pid
+
+    no_knockback_enabled = False
+    no_knockback_address = None
+    no_knockback_original_bytes = None
+    no_knockback_pid = None
+
+
 def infiniteJump():
     global infinite_jump_enabled
     global infinite_jump_address
@@ -380,6 +408,84 @@ def infiniteJump():
         return False, "Crab Game.exe not found. Start the game first."
     except Exception as exc:
         return False, f"Infinite jump failed: {exc}"
+    finally:
+        if patch_process is not None:
+            patch_process.close_process()
+
+
+def toggle_no_knockback_patch():
+    global no_knockback_enabled
+    global no_knockback_address
+    global no_knockback_original_bytes
+    global no_knockback_pid
+
+    patch_process = None
+    try:
+        patch_process = pymem.Pymem("Crab Game.exe")
+        current_pid = ctypes.windll.kernel32.GetProcessId(
+            patch_process.process_handle
+        )
+
+        if no_knockback_enabled:
+            if (
+                no_knockback_address is None
+                or no_knockback_original_bytes is None
+                or no_knockback_pid is None
+            ):
+                reset_no_knockback_state()
+                return False, "No knockback state was lost. Enable it again."
+
+            if current_pid != no_knockback_pid:
+                reset_no_knockback_state()
+                return False, "Crab Game restarted. Enable no knockback again."
+
+            patch_process.write_bytes(
+                no_knockback_address,
+                no_knockback_original_bytes,
+                len(no_knockback_original_bytes),
+            )
+            reset_no_knockback_state()
+            return True, "No knockback disabled."
+
+        client = pymem.process.module_from_name(
+            patch_process.process_handle,
+            "GameAssembly.dll",
+        )
+
+        if client is None:
+            return False, "GameAssembly.dll was not found."
+
+        client_module = patch_process.read_bytes(
+            client.lpBaseOfDll,
+            client.SizeOfImage,
+        )
+        match = re.search(
+            NO_KNOCKBACK_PATTERN,
+            client_module,
+        )
+
+        if match is None:
+            return False, "No knockback pattern was not found."
+
+        address = client.lpBaseOfDll + match.start()
+        original_bytes = patch_process.read_bytes(
+            address,
+            len(NO_KNOCKBACK_PATCH_BYTES),
+        )
+        patch_process.write_bytes(
+            address,
+            NO_KNOCKBACK_PATCH_BYTES,
+            len(NO_KNOCKBACK_PATCH_BYTES),
+        )
+        no_knockback_enabled = True
+        no_knockback_address = address
+        no_knockback_original_bytes = original_bytes
+        no_knockback_pid = current_pid
+        return True, "No knockback enabled."
+    except pymem.exception.ProcessNotFound:
+        return False, "Crab Game.exe not found. Start the game first."
+    except Exception as exc:
+        return False, f"No knockback failed: {exc}"
     finally:
         if patch_process is not None:
             patch_process.close_process()
@@ -475,6 +581,17 @@ def update_infinite_jump_toggle():
     dpg.set_value(INFINITE_JUMP_TOGGLE_TAG, infinite_jump_enabled)
 
 
+def update_no_knockback_toggle():
+    if threading.current_thread() is not threading.main_thread():
+        queue_ui_action("sync_no_knockback_toggle")
+        return
+
+    if not dpg.does_item_exist(NO_KNOCKBACK_TOGGLE_TAG):
+        return
+
+    dpg.set_value(NO_KNOCKBACK_TOGGLE_TAG, no_knockback_enabled)
+
+
 def hotkey_toggle_infinite_jump():
     try:
         success, message = infiniteJump()
@@ -488,6 +605,20 @@ def hotkey_toggle_infinite_jump():
         print(f"Hotkey infinite jump {state}.")
     except Exception as exc:
         print(f"Hotkey infinite jump failed: {exc}")
+
+
+def hotkey_toggle_no_knockback():
+    try:
+        success, message = toggle_no_knockback_patch()
+        update_no_knockback_toggle()
+        if not success:
+            print(message)
+            return
+
+        state = "enabled" if no_knockback_enabled else "disabled"
+        print(f"Hotkey no knockback {state}.")
+    except Exception as exc:
+        print(f"Hotkey no knockback failed: {exc}")
 
 
 def hp_freeze_worker():
@@ -569,6 +700,22 @@ def apply_infinite_jump(sender=None, app_data=None, user_data=None):
     set_status(message, is_error=True)
 
 
+def apply_no_knockback(sender=None, app_data=None, user_data=None):
+    desired_state = bool(app_data)
+    if desired_state == no_knockback_enabled:
+        update_no_knockback_toggle()
+        return
+
+    success, message = toggle_no_knockback_patch()
+    if success:
+        update_no_knockback_toggle()
+        set_status(message)
+        return
+
+    update_no_knockback_toggle()
+    set_status(message, is_error=True)
+
+
 def anti_cheat_worker():
     try:
         antiCheat.run()
@@ -622,7 +769,13 @@ def apply_theme(theme_name, update_status=False):
         if current_value != theme_name:
             dpg.set_value(THEME_SELECTOR_TAG, theme_name)
 
-    hint_items = [INSERT_HINT_TAG, INTERACT_HINT_TAG, HP_HINT_TAG]
+    hint_items = [
+        INSERT_HINT_TAG,
+        INTERACT_HINT_TAG,
+        HP_HINT_TAG,
+        INFINITE_JUMP_HINT_TAG,
+        NO_KNOCKBACK_HINT_TAG,
+    ]
     hint_items.extend(
         f"hotkey_hint_{index}" for index in range(len(HOTKEY_HINTS)))
     for item_tag in hint_items:
@@ -702,7 +855,7 @@ def build_ui():
         no_resize=True,
         no_collapse=True,
         width=480,
-        height=405,
+        height=435,
     ):
         dpg.add_text("CGMenu")
         dpg.add_text(
@@ -752,7 +905,7 @@ def build_ui():
         dpg.add_spacer(height=4)
         with dpg.group(horizontal=True):
             dpg.add_button(
-                label="Teleport + Press E",
+                label="Ready Up",
                 tag=TELEPORT_BUTTON_TAG,
                 width=210,
                 height=38,
@@ -768,8 +921,19 @@ def build_ui():
                 tag=INFINITE_JUMP_TOGGLE_TAG,
                 callback=apply_infinite_jump,
             )
+        with dpg.group(horizontal=False):
+            dpg.add_checkbox(
+                label="No Knockback",
+                tag=NO_KNOCKBACK_TOGGLE_TAG,
+                callback=apply_no_knockback,
+            )
 
         dpg.add_separator()
+        dpg.add_text(
+            f"{NO_KNOCKBACK_HOTKEY.upper()} = Toggle no knockback",
+            tag=NO_KNOCKBACK_HINT_TAG,
+            color=THEMES[current_theme_name]["hint"],
+        )
         dpg.add_text(
             f"{INTERACT_TELEPORT_HOTKEY.upper()} = Ready Up",
             tag=INTERACT_HINT_TAG,
@@ -800,8 +964,9 @@ def main():
     build_ui()
     update_hp_toggle()
     update_infinite_jump_toggle()
+    update_no_knockback_toggle()
 
-    dpg.create_viewport(title=MENU_TITLE, width=480, height=405)
+    dpg.create_viewport(title=MENU_TITLE, width=480, height=435)
     dpg.set_viewport_decorated(False)
     dpg.set_viewport_resizable(False)
     dpg.set_viewport_always_top(True)
@@ -827,6 +992,10 @@ def main():
     infinite_jump_hotkey = keyboard.add_hotkey(
         INFINITE_JUMP_HOTKEY,
         callback=hotkey_toggle_infinite_jump
+    )
+    no_knockback_hotkey = keyboard.add_hotkey(
+        NO_KNOCKBACK_HOTKEY,
+        callback=hotkey_toggle_no_knockback,
     )
     nudge_hotkeys = [
         keyboard.add_hotkey(
@@ -855,6 +1024,7 @@ def main():
         keyboard.remove_hotkey(interact_hotkey)
         keyboard.remove_hotkey(set_hp_hotkey)
         keyboard.remove_hotkey(infinite_jump_hotkey)
+        keyboard.remove_hotkey(no_knockback_hotkey)
         for hotkey in nudge_hotkeys:
             keyboard.remove_hotkey(hotkey)
         dpg.destroy_context()
