@@ -1,5 +1,6 @@
 import ctypes
 import ctypes.wintypes
+import queue
 import re
 import threading
 
@@ -8,6 +9,8 @@ import keyboard
 import pymem
 import pymem.process
 import time
+
+import antiCheat
 
 
 MENU_TITLE = "Crab Game Menu"
@@ -21,6 +24,7 @@ APPLY_BUTTON_TAG = "apply_position_button"
 REFRESH_BUTTON_TAG = "refresh_position_button"
 TELEPORT_BUTTON_TAG = "teleport_interact_button"
 SET_HP_BUTTON_TAG = "set_hp_button"
+INFINITE_JUMP_BUTTON_TAG = "infinite_jump_button"
 
 PLAYER_STATIC_OFFSET = 0x01A81BA8
 INTERACT_TELEPORT_POSITION = (0.678, -18.297, 12.257)
@@ -31,6 +35,8 @@ SET_HP_HOTKEY = "f5"
 SET_HP_VALUE = 100
 HP_FREEZE_INTERVAL = 0.05
 HP_POINTERS = [0x48, 0xB8, 0x28, 0x24]
+INFINITE_JUMP_PATTERN = rb"\x80\xBB.....\x74\x09\x80\xBB....."
+INFINITE_JUMP_PATCH_BYTES = b"\x90\x90\x90\x90\x90\x90\x90\x90\x90"
 
 AXIS_POINTERS = {
     "x": [0x480, 0x3A0],
@@ -39,9 +45,9 @@ AXIS_POINTERS = {
 }
 AXIS_ORDER = ("x", "y", "z")
 HOTKEY_HINTS = (
-    "Ctrl+Alt+Left / Right = X -/+ 1",
-    "Ctrl+Alt+Down / Up = Y -/+ 1",
-    "Ctrl+Alt+PageDown / PageUp = Z -/+ 1",
+    "F7 / F8 = X -/+ 1",
+    "F9 / F10 = Y -/+ 1",
+    "F11 / F12 = Z -/+ 1",
 )
 
 visible = False
@@ -49,6 +55,12 @@ pm = None
 hp_freeze_enabled = False
 hp_freeze_stop_event = threading.Event()
 hp_freeze_lock = threading.Lock()
+infinite_jump_enabled = False
+infinite_jump_address = None
+infinite_jump_original_bytes = None
+infinite_jump_pid = None
+ui_status_queue = queue.SimpleQueue()
+ui_action_queue = queue.SimpleQueue()
 SW_HIDE = 0
 SW_SHOW = 5
 WM_NCLBUTTONDOWN = 0x00A1
@@ -57,10 +69,35 @@ HTCAPTION = 2
 
 def set_status(message, is_error=False):
     print(message)
+    if threading.current_thread() is not threading.main_thread():
+        queue_status(message, is_error=is_error)
+        return
+
     if dpg.does_item_exist(STATUS_TAG):
         dpg.set_value(STATUS_TAG, message)
         theme = STATUS_ERROR_THEME if is_error else STATUS_OK_THEME
         dpg.bind_item_theme(STATUS_TAG, theme)
+
+
+def queue_status(message, is_error=False):
+    ui_status_queue.put((message, is_error))
+
+
+def flush_status_updates():
+    while not ui_status_queue.empty():
+        message, is_error = ui_status_queue.get()
+        set_status(message, is_error=is_error)
+
+
+def queue_ui_action(action, payload=None):
+    ui_action_queue.put((action, payload))
+
+
+def flush_ui_actions():
+    while not ui_action_queue.empty():
+        action, payload = ui_action_queue.get()
+        if action == "sync_position":
+            sync_position_ui(show_status=payload)
 
 
 def ensure_process():
@@ -129,6 +166,7 @@ def is_interactive_item_hovered():
         REFRESH_BUTTON_TAG,
         TELEPORT_BUTTON_TAG,
         SET_HP_BUTTON_TAG,
+        INFINITE_JUMP_BUTTON_TAG,
     )
     return any(dpg.is_item_hovered(tag) for tag in interactive_tags if dpg.does_item_exist(tag))
 
@@ -241,6 +279,96 @@ def write_position(position):
         process.write_float(addresses[axis], float(value))
 
 
+def reset_infinite_jump_state():
+    global infinite_jump_enabled
+    global infinite_jump_address
+    global infinite_jump_original_bytes
+    global infinite_jump_pid
+
+    infinite_jump_enabled = False
+    infinite_jump_address = None
+    infinite_jump_original_bytes = None
+    infinite_jump_pid = None
+
+
+def infiniteJump():
+    global infinite_jump_enabled
+    global infinite_jump_address
+    global infinite_jump_original_bytes
+    global infinite_jump_pid
+
+    patch_process = None
+    try:
+        patch_process = pymem.Pymem("Crab Game.exe")
+        current_pid = ctypes.windll.kernel32.GetProcessId(
+            patch_process.process_handle
+        )
+
+        if infinite_jump_enabled:
+            if (
+                infinite_jump_address is None
+                or infinite_jump_original_bytes is None
+                or infinite_jump_pid is None
+            ):
+                reset_infinite_jump_state()
+                return False, "Infinite jump state was lost. Enable it again."
+
+            if current_pid != infinite_jump_pid:
+                reset_infinite_jump_state()
+                return False, "Crab Game restarted. Enable infinite jump again."
+
+            patch_process.write_bytes(
+                infinite_jump_address,
+                infinite_jump_original_bytes,
+                len(infinite_jump_original_bytes),
+            )
+            reset_infinite_jump_state()
+            return True, "Infinite jump disabled."
+
+        client = pymem.process.module_from_name(
+            patch_process.process_handle,
+            "GameAssembly.dll",
+        )
+
+        if client is None:
+            return False, "GameAssembly.dll was not found."
+
+        client_module = patch_process.read_bytes(
+            client.lpBaseOfDll,
+            client.SizeOfImage,
+        )
+        match = re.search(
+            INFINITE_JUMP_PATTERN,
+            client_module,
+        )
+
+        if match is None:
+            return False, "Infinite jump pattern was not found."
+
+        address = client.lpBaseOfDll + match.start()
+        original_bytes = patch_process.read_bytes(
+            address,
+            len(INFINITE_JUMP_PATCH_BYTES),
+        )
+        patch_process.write_bytes(
+            address,
+            INFINITE_JUMP_PATCH_BYTES,
+            len(INFINITE_JUMP_PATCH_BYTES),
+        )
+        infinite_jump_enabled = True
+        infinite_jump_address = address
+        infinite_jump_original_bytes = original_bytes
+        infinite_jump_pid = current_pid
+        return True, "Infinite jump enabled."
+    except pymem.exception.ProcessNotFound:
+        return False, "Crab Game.exe not found. Start the game first."
+    except Exception as exc:
+        return False, f"Infinite jump failed: {exc}"
+    finally:
+        if patch_process is not None:
+            patch_process.close_process()
+
+
 def teleport_and_press_interact(update_status=True, sync_ui=False):
     write_position(INTERACT_TELEPORT_POSITION)
     time.sleep(0.5)
@@ -263,6 +391,10 @@ def parse_position_input(raw_value):
 
 
 def sync_position_ui(show_status=True):
+    if threading.current_thread() is not threading.main_thread():
+        queue_ui_action("sync_position", show_status)
+        return
+
     if not dpg.does_item_exist(CURRENT_POSITION_TAG):
         return
 
@@ -315,6 +447,23 @@ def update_hp_button_label():
         else f"Freeze HP OFF ({SET_HP_VALUE})"
     )
     dpg.configure_item(SET_HP_BUTTON_TAG, label=label)
+
+
+def update_infinite_jump_button():
+    if not dpg.does_item_exist(INFINITE_JUMP_BUTTON_TAG):
+        return
+
+    if infinite_jump_enabled:
+        dpg.configure_item(
+            INFINITE_JUMP_BUTTON_TAG,
+            label="Infinite Jump ON",
+        )
+        return
+
+    dpg.configure_item(
+        INFINITE_JUMP_BUTTON_TAG,
+        label="Infinite Jump OFF",
+    )
 
 
 def hp_freeze_worker():
@@ -370,10 +519,30 @@ def hotkey_toggle_hp_freeze():
         print(f"Hotkey HP freeze failed: {exc}")
 
 
-def nudge_axis(axis, delta):
-    if not visible:
+def apply_infinite_jump(sender=None, app_data=None, user_data=None):
+    success, message = infiniteJump()
+    if success:
+        update_infinite_jump_button()
+        set_status(message)
         return
 
+    update_infinite_jump_button()
+    set_status(message, is_error=True)
+
+
+def anti_cheat_worker():
+    try:
+        antiCheat.run()
+        queue_status("Anti-cheat patch applied.")
+    except Exception as exc:
+        queue_status(f"Anti-cheat patch failed: {exc}", is_error=True)
+
+
+def start_anti_cheat_thread():
+    threading.Thread(target=anti_cheat_worker, daemon=True).start()
+
+
+def nudge_axis(axis, delta):
     try:
         current_position = list(read_position())
         axis_index = AXIS_ORDER.index(axis)
@@ -387,30 +556,8 @@ def nudge_axis(axis, delta):
         set_status(f"Unable to nudge {axis.upper()}: {exc}", is_error=True)
 
 
-def handle_axis_hotkey(sender, app_data):
-    if not visible:
-        return
-
-    ctrl_down = dpg.is_key_down(
-        dpg.mvKey_LControl) or dpg.is_key_down(dpg.mvKey_RControl)
-    alt_down = dpg.is_key_down(
-        dpg.mvKey_LAlt) or dpg.is_key_down(dpg.mvKey_RAlt)
-
-    if not (ctrl_down and alt_down):
-        return
-
-    keymap = {
-        dpg.mvKey_Left: ("x", -1.0),
-        dpg.mvKey_Right: ("x", 1.0),
-        dpg.mvKey_Down: ("y", -1.0),
-        dpg.mvKey_Up: ("y", 1.0),
-        dpg.mvKey_Prior: ("z", 1.0),
-        dpg.mvKey_Next: ("z", -1.0),
-    }
-
-    if app_data in keymap:
-        axis, delta = keymap[app_data]
-        nudge_axis(axis, delta)
+def hotkey_nudge_axis(axis, delta):
+    nudge_axis(axis, delta)
 
 
 def handle_mouse_down(sender, app_data):
@@ -475,7 +622,7 @@ def build_ui():
         no_resize=True,
         no_collapse=True,
         width=480,
-        height=320,
+        height=350,
     ):
         dpg.add_text("Crab Game Position Editor")
         dpg.add_text("Insert toggles the menu.", color=(154, 167, 183))
@@ -507,9 +654,9 @@ def build_ui():
         dpg.add_spacer(height=4)
         with dpg.group(horizontal=True):
             dpg.add_button(
-                label="Teleport To Interact Spot + Press E",
+                label="Teleport + Press E",
                 tag=TELEPORT_BUTTON_TAG,
-                width=320,
+                width=210,
                 height=38,
                 callback=apply_interact_teleport,
             )
@@ -519,6 +666,13 @@ def build_ui():
                 width=100,
                 height=38,
                 callback=apply_toggle_hp_freeze,
+            )
+            dpg.add_button(
+                label="Infinite Jump OFF",
+                tag=INFINITE_JUMP_BUTTON_TAG,
+                width=100,
+                height=38,
+                callback=apply_infinite_jump,
             )
 
         dpg.add_separator()
@@ -530,7 +684,7 @@ def build_ui():
             f"{SET_HP_HOTKEY.upper()} = Toggle HP freeze at {SET_HP_VALUE}",
             color=(154, 167, 183),
         )
-        dpg.add_text("Hotkeys while menu is open")
+        dpg.add_text("Global Hotkeys")
         for hint in HOTKEY_HINTS:
             dpg.add_text(hint, color=(154, 167, 183))
 
@@ -543,8 +697,10 @@ def main():
     dpg.create_context()
     build_theme()
     build_ui()
+    update_hp_button_label()
+    update_infinite_jump_button()
 
-    dpg.create_viewport(title=MENU_TITLE, width=480, height=320)
+    dpg.create_viewport(title=MENU_TITLE, width=480, height=350)
     dpg.set_viewport_decorated(False)
     dpg.set_viewport_resizable(False)
     dpg.set_viewport_always_top(True)
@@ -556,7 +712,6 @@ def main():
     hide_window()
 
     with dpg.handler_registry():
-        dpg.add_key_press_handler(callback=handle_axis_hotkey)
         dpg.add_mouse_down_handler(callback=handle_mouse_down)
 
     insert_hotkey = keyboard.add_hotkey("insert", callback=toggle_window)
@@ -568,14 +723,34 @@ def main():
         SET_HP_HOTKEY,
         callback=hotkey_toggle_hp_freeze,
     )
+    nudge_hotkeys = [
+        keyboard.add_hotkey(
+            "f7", callback=lambda: hotkey_nudge_axis("x", -1.0)),
+        keyboard.add_hotkey(
+            "f8", callback=lambda: hotkey_nudge_axis("x", 1.0)),
+        keyboard.add_hotkey(
+            "f9", callback=lambda: hotkey_nudge_axis("y", -1.0)),
+        keyboard.add_hotkey(
+            "f10", callback=lambda: hotkey_nudge_axis("y", 1.0)),
+        keyboard.add_hotkey(
+            "f11", callback=lambda: hotkey_nudge_axis("z", 1.0)),
+        keyboard.add_hotkey(
+            "f12", callback=lambda: hotkey_nudge_axis("z", -1.0)),
+    ]
+    start_anti_cheat_thread()
 
     try:
-        dpg.start_dearpygui()
+        while dpg.is_dearpygui_running():
+            flush_ui_actions()
+            flush_status_updates()
+            dpg.render_dearpygui_frame()
     finally:
         hp_freeze_stop_event.set()
         keyboard.remove_hotkey(insert_hotkey)
         keyboard.remove_hotkey(interact_hotkey)
         keyboard.remove_hotkey(set_hp_hotkey)
+        for hotkey in nudge_hotkeys:
+            keyboard.remove_hotkey(hotkey)
         dpg.destroy_context()
 
 
