@@ -3,18 +3,33 @@ import ctypes.wintypes
 import queue
 import re
 import threading
+import time
 
 import dearpygui.dearpygui as dpg
 import keyboard
 import pymem
-import pymem.process
-import time
 
 import antiCheat
 import themes
+from memory_utils import (
+    GAME_ASSEMBLY_MODULE,
+    GAME_EXE_NAME,
+    UNITY_PLAYER_MODULE,
+    PatchSpec,
+    PatchState,
+    get_module,
+    get_process_id,
+    is_process_alive,
+    open_process,
+    read_pointer_chain,
+    toggle_patch,
+)
 
 
 MENU_TITLE = "Crab Game Menu"
+DEFAULT_THEME_NAME = "Midnight"
+VIEWPORT_WIDTH = 480
+VIEWPORT_HEIGHT = 435
 MENU_TAG = "menu_window"
 POSITION_INPUT_TAG = "position_input"
 CURRENT_POSITION_TAG = "current_position"
@@ -44,15 +59,7 @@ SET_HP_VALUE = 100
 HP_FREEZE_INTERVAL = 0.05
 HP_POINTERS = [0x48, 0xB8, 0x28, 0x24]
 
-INFINITE_JUMP_PATTERN = rb"\x80\xBB.....\x74\x09\x80\xBB....."
-INFINITE_JUMP_PATCH_BYTES = b"\x90\x90\x90\x90\x90\x90\x90\x90\x90"
 INFINITE_JUMP_HOTKEY = "f4"
-NO_KNOCKBACK_PATTERN = (
-    rb"\x48\x89\x5C\x24.\x48\x89\x74\x24.\x57\x48\x83\xEC."
-    rb"\x80\x3D.....\x48\x8B\xF2\x48\x8B\xD9\x75.\x48\x8D\x0D...."
-    rb"\xE8....\x48\x8D\x0D....\xE8....\xC6\x05.....\x48\x8B\x7B"
-)
-NO_KNOCKBACK_PATCH_BYTES = b"\xC3\x90\x90\x90\x90"
 NO_KNOCKBACK_HOTKEY = "f3"
 
 AXIS_POINTERS = {
@@ -68,23 +75,34 @@ HOTKEY_HINTS = (
 )
 
 THEMES = themes.THEMES
+INFINITE_JUMP_PATCH = PatchSpec(
+    name="Infinite jump",
+    module_name=GAME_ASSEMBLY_MODULE,
+    pattern=rb"\x80\xBB.....\x74\x09\x80\xBB.....",
+    patch_bytes=b"\x90\x90\x90\x90\x90\x90\x90\x90\x90",
+)
+NO_KNOCKBACK_PATCH = PatchSpec(
+    name="No knockback",
+    module_name=GAME_ASSEMBLY_MODULE,
+    pattern=(
+        rb"\x48\x89\x5C\x24.\x48\x89\x74\x24.\x57\x48\x83\xEC."
+        rb"\x80\x3D.....\x48\x8B\xF2\x48\x8B\xD9\x75.\x48\x8D\x0D...."
+        rb"\xE8....\x48\x8D\x0D....\xE8....\xC6\x05.....\x48\x8B\x7B"
+    ),
+    patch_bytes=b"\xC3\x90\x90\x90\x90",
+)
 
 visible = False
 pm = None
 hp_freeze_enabled = False
 hp_freeze_stop_event = threading.Event()
 hp_freeze_lock = threading.Lock()
-infinite_jump_enabled = False
-infinite_jump_address = None
-infinite_jump_original_bytes = None
-infinite_jump_pid = None
-no_knockback_enabled = False
-no_knockback_address = None
-no_knockback_original_bytes = None
-no_knockback_pid = None
+anti_cheat_patched_pid = None
+infinite_jump_state = PatchState()
+no_knockback_state = PatchState()
 ui_status_queue = queue.SimpleQueue()
 ui_action_queue = queue.SimpleQueue()
-current_theme_name = "Midnight"
+current_theme_name = DEFAULT_THEME_NAME
 SW_HIDE = 0
 SW_SHOW = 5
 WM_NCLBUTTONDOWN = 0x00A1
@@ -92,11 +110,11 @@ HTCAPTION = 2
 
 
 def set_status(message, is_error=False):
-    print(message)
     if threading.current_thread() is not threading.main_thread():
         queue_status(message, is_error=is_error)
         return
 
+    print(message)
     if dpg.does_item_exist(STATUS_TAG):
         dpg.set_value(STATUS_TAG, message)
         theme = STATUS_ERROR_THEME if is_error else STATUS_OK_THEME
@@ -108,8 +126,11 @@ def queue_status(message, is_error=False):
 
 
 def flush_status_updates():
-    while not ui_status_queue.empty():
-        message, is_error = ui_status_queue.get()
+    while True:
+        try:
+            message, is_error = ui_status_queue.get_nowait()
+        except queue.Empty:
+            return
         set_status(message, is_error=is_error)
 
 
@@ -118,8 +139,11 @@ def queue_ui_action(action, payload=None):
 
 
 def flush_ui_actions():
-    while not ui_action_queue.empty():
-        action, payload = ui_action_queue.get()
+    while True:
+        try:
+            action, payload = ui_action_queue.get_nowait()
+        except queue.Empty:
+            return
         if action == "sync_position":
             sync_position_ui(show_status=payload)
         elif action == "sync_hp_toggle":
@@ -130,23 +154,57 @@ def flush_ui_actions():
             update_no_knockback_toggle()
 
 
+def reset_process_cache():
+    global pm
+    global anti_cheat_patched_pid
+
+    if pm is not None:
+        try:
+            pm.close_process()
+        except Exception:
+            pass
+
+    pm = None
+    anti_cheat_patched_pid = None
+
+
+def ensure_anti_cheat_patch(process_id):
+    global anti_cheat_patched_pid
+
+    if anti_cheat_patched_pid == process_id:
+        return
+
+    antiCheat.run()
+    anti_cheat_patched_pid = process_id
+
+
 def ensure_process():
     global pm
 
-    if pm is not None:
+    if pm is not None and is_process_alive(pm):
         return pm
 
+    reset_process_cache()
+
     try:
-        pm = pymem.Pymem("Crab Game.exe")
-        set_status("Attached to Crab Game.")
+        pm = open_process(GAME_EXE_NAME)
+        process_id = get_process_id(pm)
+        status_message = "Attached to Crab Game."
+        try:
+            ensure_anti_cheat_patch(process_id)
+            status_message += " Anti-cheat patch applied."
+            set_status(status_message)
+        except Exception as exc:
+            set_status(f"{status_message} Anti-cheat patch failed: {exc}",
+                       is_error=True)
         return pm
     except pymem.exception.ProcessNotFound:
-        pm = None
-        set_status("Crab Game.exe not found. Start the game first.",
+        reset_process_cache()
+        set_status(f"{GAME_EXE_NAME} not found. Start the game first.",
                    is_error=True)
         return None
     except Exception as exc:
-        pm = None
+        reset_process_cache()
         set_status(f"Could not attach to Crab Game: {exc}", is_error=True)
         return None
 
@@ -212,37 +270,30 @@ def begin_native_window_drag():
     ctypes.windll.user32.SendMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0)
 
 
-def read_pointer_chain(process, base_addr, static_offset, offsets):
-    address = base_addr + static_offset
-    for offset in offsets:
-        address = process.read_longlong(address)
-        address += offset
-    return address
-
-
-def get_hp_addresses():
-    global pm
-
+def resolve_pointer_chain(module_name, static_offset, offsets):
     process = ensure_process()
     if process is None:
         raise RuntimeError("Crab Game is not running.")
 
     try:
-        module = pymem.process.module_from_name(
-            process.process_handle, "GameAssembly.dll")
+        module = get_module(process, module_name)
     except Exception as exc:
-        pm = None
+        reset_process_cache()
         raise RuntimeError(f"Lost connection to Crab Game: {exc}") from exc
 
-    if module is None:
-        raise RuntimeError("GameAssembly.dll was not found.")
-
-    base_address = module.lpBaseOfDll
     return read_pointer_chain(
         process,
-        base_address,
+        module.lpBaseOfDll,
+        static_offset,
+        offsets,
+    )
+
+
+def get_hp_address():
+    return resolve_pointer_chain(
+        GAME_ASSEMBLY_MODULE,
         PLAYER_STATIC_OFFSET_2,
-        HP_POINTERS
+        HP_POINTERS,
     )
 
 
@@ -251,39 +302,24 @@ def read_hp():
     if process is None:
         raise RuntimeError("Crab Game is not running.")
 
-    addresses = get_hp_addresses()
-    return process.read_int(addresses)
+    return process.read_int(get_hp_address())
 
 
 def write_hp(value, update_status=True):
     process = ensure_process()
-    address = get_hp_addresses()
+    address = get_hp_address()
     process.write_int(address, int(value))
     if update_status:
         set_status(f"HP set to {value}")
 
 
 def get_axis_addresses():
-    global pm
-
-    process = ensure_process()
-    if process is None:
-        raise RuntimeError("Crab Game is not running.")
-
-    try:
-        module = pymem.process.module_from_name(
-            process.process_handle, "UnityPlayer.dll")
-    except Exception as exc:
-        pm = None
-        raise RuntimeError(f"Lost connection to Crab Game: {exc}") from exc
-
-    if module is None:
-        raise RuntimeError("UnityPlayer.dll was not found.")
-
-    base_address = module.lpBaseOfDll
     return {
-        axis: read_pointer_chain(
-            process, base_address, PLAYER_STATIC_OFFSET, offsets)
+        axis: resolve_pointer_chain(
+            UNITY_PLAYER_MODULE,
+            PLAYER_STATIC_OFFSET,
+            offsets,
+        )
         for axis, offsets in AXIS_POINTERS.items()
     }
 
@@ -311,184 +347,21 @@ def write_position(position):
         process.write_float(addresses[axis], float(value))
 
 
-def reset_infinite_jump_state():
-    global infinite_jump_enabled
-    global infinite_jump_address
-    global infinite_jump_original_bytes
-    global infinite_jump_pid
-
-    infinite_jump_enabled = False
-    infinite_jump_address = None
-    infinite_jump_original_bytes = None
-    infinite_jump_pid = None
-
-
-def reset_no_knockback_state():
-    global no_knockback_enabled
-    global no_knockback_address
-    global no_knockback_original_bytes
-    global no_knockback_pid
-
-    no_knockback_enabled = False
-    no_knockback_address = None
-    no_knockback_original_bytes = None
-    no_knockback_pid = None
-
-
-def infiniteJump():
-    global infinite_jump_enabled
-    global infinite_jump_address
-    global infinite_jump_original_bytes
-    global infinite_jump_pid
-
-    patch_process = None
+def toggle_feature_patch(patch_spec, patch_state):
     try:
-        patch_process = pymem.Pymem("Crab Game.exe")
-        current_pid = ctypes.windll.kernel32.GetProcessId(
-            patch_process.process_handle
-        )
-
-        if infinite_jump_enabled:
-            if (
-                infinite_jump_address is None
-                or infinite_jump_original_bytes is None
-                or infinite_jump_pid is None
-            ):
-                reset_infinite_jump_state()
-                return False, "Infinite jump state was lost. Enable it again."
-
-            if current_pid != infinite_jump_pid:
-                reset_infinite_jump_state()
-                return False, "Crab Game restarted. Enable infinite jump again."
-
-            patch_process.write_bytes(
-                infinite_jump_address,
-                infinite_jump_original_bytes,
-                len(infinite_jump_original_bytes),
-            )
-            reset_infinite_jump_state()
-            return True, "Infinite jump disabled."
-
-        client = pymem.process.module_from_name(
-            patch_process.process_handle,
-            "GameAssembly.dll",
-        )
-
-        if client is None:
-            return False, "GameAssembly.dll was not found."
-
-        client_module = patch_process.read_bytes(
-            client.lpBaseOfDll,
-            client.SizeOfImage,
-        )
-        match = re.search(
-            INFINITE_JUMP_PATTERN,
-            client_module,
-        )
-
-        if match is None:
-            return False, "Infinite jump pattern was not found."
-
-        address = client.lpBaseOfDll + match.start()
-        original_bytes = patch_process.read_bytes(
-            address,
-            len(INFINITE_JUMP_PATCH_BYTES),
-        )
-        patch_process.write_bytes(
-            address,
-            INFINITE_JUMP_PATCH_BYTES,
-            len(INFINITE_JUMP_PATCH_BYTES),
-        )
-        infinite_jump_enabled = True
-        infinite_jump_address = address
-        infinite_jump_original_bytes = original_bytes
-        infinite_jump_pid = current_pid
-        return True, "Infinite jump enabled."
+        return toggle_patch(patch_spec, patch_state)
     except pymem.exception.ProcessNotFound:
-        return False, "Crab Game.exe not found. Start the game first."
+        return False, f"{GAME_EXE_NAME} not found. Start the game first."
     except Exception as exc:
-        return False, f"Infinite jump failed: {exc}"
-    finally:
-        if patch_process is not None:
-            patch_process.close_process()
+        return False, f"{patch_spec.name} failed: {exc}"
+
+
+def toggle_infinite_jump_patch():
+    return toggle_feature_patch(INFINITE_JUMP_PATCH, infinite_jump_state)
 
 
 def toggle_no_knockback_patch():
-    global no_knockback_enabled
-    global no_knockback_address
-    global no_knockback_original_bytes
-    global no_knockback_pid
-
-    patch_process = None
-    try:
-        patch_process = pymem.Pymem("Crab Game.exe")
-        current_pid = ctypes.windll.kernel32.GetProcessId(
-            patch_process.process_handle
-        )
-
-        if no_knockback_enabled:
-            if (
-                no_knockback_address is None
-                or no_knockback_original_bytes is None
-                or no_knockback_pid is None
-            ):
-                reset_no_knockback_state()
-                return False, "No knockback state was lost. Enable it again."
-
-            if current_pid != no_knockback_pid:
-                reset_no_knockback_state()
-                return False, "Crab Game restarted. Enable no knockback again."
-
-            patch_process.write_bytes(
-                no_knockback_address,
-                no_knockback_original_bytes,
-                len(no_knockback_original_bytes),
-            )
-            reset_no_knockback_state()
-            return True, "No knockback disabled."
-
-        client = pymem.process.module_from_name(
-            patch_process.process_handle,
-            "GameAssembly.dll",
-        )
-
-        if client is None:
-            return False, "GameAssembly.dll was not found."
-
-        client_module = patch_process.read_bytes(
-            client.lpBaseOfDll,
-            client.SizeOfImage,
-        )
-        match = re.search(
-            NO_KNOCKBACK_PATTERN,
-            client_module,
-        )
-
-        if match is None:
-            return False, "No knockback pattern was not found."
-
-        address = client.lpBaseOfDll + match.start()
-        original_bytes = patch_process.read_bytes(
-            address,
-            len(NO_KNOCKBACK_PATCH_BYTES),
-        )
-        patch_process.write_bytes(
-            address,
-            NO_KNOCKBACK_PATCH_BYTES,
-            len(NO_KNOCKBACK_PATCH_BYTES),
-        )
-        no_knockback_enabled = True
-        no_knockback_address = address
-        no_knockback_original_bytes = original_bytes
-        no_knockback_pid = current_pid
-        return True, "No knockback enabled."
-    except pymem.exception.ProcessNotFound:
-        return False, "Crab Game.exe not found. Start the game first."
-    except Exception as exc:
-        return False, f"No knockback failed: {exc}"
-    finally:
-        if patch_process is not None:
-            patch_process.close_process()
+    return toggle_feature_patch(NO_KNOCKBACK_PATCH, no_knockback_state)
 
 
 def teleport_and_press_interact(update_status=True, sync_ui=False):
@@ -552,11 +425,11 @@ def apply_interact_teleport(sender=None, app_data=None, user_data=None):
 def hotkey_interact_teleport():
     try:
         teleport_and_press_interact(update_status=False, sync_ui=False)
-        print(
+        queue_status(
             f"Hotkey teleport -> {format_position(INTERACT_TELEPORT_POSITION)} and pressed E."
         )
     except Exception as exc:
-        print(f"Hotkey teleport failed: {exc}")
+        queue_status(f"Hotkey teleport failed: {exc}", is_error=True)
 
 
 def update_hp_toggle():
@@ -578,7 +451,7 @@ def update_infinite_jump_toggle():
     if not dpg.does_item_exist(INFINITE_JUMP_TOGGLE_TAG):
         return
 
-    dpg.set_value(INFINITE_JUMP_TOGGLE_TAG, infinite_jump_enabled)
+    dpg.set_value(INFINITE_JUMP_TOGGLE_TAG, infinite_jump_state.enabled)
 
 
 def update_no_knockback_toggle():
@@ -589,22 +462,20 @@ def update_no_knockback_toggle():
     if not dpg.does_item_exist(NO_KNOCKBACK_TOGGLE_TAG):
         return
 
-    dpg.set_value(NO_KNOCKBACK_TOGGLE_TAG, no_knockback_enabled)
+    dpg.set_value(NO_KNOCKBACK_TOGGLE_TAG, no_knockback_state.enabled)
 
 
 def hotkey_toggle_infinite_jump():
     try:
-        success, message = infiniteJump()
+        success, message = toggle_infinite_jump_patch()
         update_infinite_jump_toggle()
         if not success:
-            print(message)
+            queue_status(message, is_error=True)
             return
 
-        enabled = infinite_jump_enabled
-        state = "enabled" if enabled else "disabled"
-        print(f"Hotkey infinite jump {state}.")
+        queue_status(message)
     except Exception as exc:
-        print(f"Hotkey infinite jump failed: {exc}")
+        queue_status(f"Hotkey infinite jump failed: {exc}", is_error=True)
 
 
 def hotkey_toggle_no_knockback():
@@ -612,13 +483,12 @@ def hotkey_toggle_no_knockback():
         success, message = toggle_no_knockback_patch()
         update_no_knockback_toggle()
         if not success:
-            print(message)
+            queue_status(message, is_error=True)
             return
 
-        state = "enabled" if no_knockback_enabled else "disabled"
-        print(f"Hotkey no knockback {state}.")
+        queue_status(message)
     except Exception as exc:
-        print(f"Hotkey no knockback failed: {exc}")
+        queue_status(f"Hotkey no knockback failed: {exc}", is_error=True)
 
 
 def hp_freeze_worker():
@@ -631,7 +501,7 @@ def hp_freeze_worker():
             hp_freeze_enabled = False
             hp_freeze_stop_event.set()
             update_hp_toggle()
-            print(f"HP freeze failed: {exc}")
+            queue_status(f"HP freeze failed: {exc}", is_error=True)
             return
 
         hp_freeze_stop_event.wait(HP_FREEZE_INTERVAL)
@@ -679,18 +549,18 @@ def hotkey_toggle_hp_freeze():
     try:
         enabled = toggle_hp_freeze(update_status=False)
         state = "enabled" if enabled else "disabled"
-        print(f"Hotkey HP freeze {state} at {SET_HP_VALUE}.")
+        queue_status(f"Hotkey HP freeze {state} at {SET_HP_VALUE}.")
     except Exception as exc:
-        print(f"Hotkey HP freeze failed: {exc}")
+        queue_status(f"Hotkey HP freeze failed: {exc}", is_error=True)
 
 
 def apply_infinite_jump(sender=None, app_data=None, user_data=None):
     desired_state = bool(app_data)
-    if desired_state == infinite_jump_enabled:
+    if desired_state == infinite_jump_state.enabled:
         update_infinite_jump_toggle()
         return
 
-    success, message = infiniteJump()
+    success, message = toggle_infinite_jump_patch()
     if success:
         update_infinite_jump_toggle()
         set_status(message)
@@ -702,7 +572,7 @@ def apply_infinite_jump(sender=None, app_data=None, user_data=None):
 
 def apply_no_knockback(sender=None, app_data=None, user_data=None):
     desired_state = bool(app_data)
-    if desired_state == no_knockback_enabled:
+    if desired_state == no_knockback_state.enabled:
         update_no_knockback_toggle()
         return
 
@@ -714,18 +584,6 @@ def apply_no_knockback(sender=None, app_data=None, user_data=None):
 
     update_no_knockback_toggle()
     set_status(message, is_error=True)
-
-
-def anti_cheat_worker():
-    try:
-        antiCheat.run()
-        queue_status("Anti-cheat patch applied.")
-    except Exception as exc:
-        queue_status(f"Anti-cheat patch failed: {exc}", is_error=True)
-
-
-def start_anti_cheat_thread():
-    threading.Thread(target=anti_cheat_worker, daemon=True).start()
 
 
 def nudge_axis(axis, delta):
@@ -758,7 +616,7 @@ def apply_theme(theme_name, update_status=False):
     global current_theme_name
 
     if theme_name not in THEMES:
-        theme_name = "Midnight"
+        theme_name = DEFAULT_THEME_NAME
 
     current_theme_name = theme_name
     theme = THEMES[theme_name]
@@ -854,8 +712,8 @@ def build_ui():
         no_move=True,
         no_resize=True,
         no_collapse=True,
-        width=480,
-        height=435,
+        width=VIEWPORT_WIDTH,
+        height=VIEWPORT_HEIGHT,
     ):
         dpg.add_text("CGMenu")
         dpg.add_text(
@@ -921,12 +779,11 @@ def build_ui():
                 tag=INFINITE_JUMP_TOGGLE_TAG,
                 callback=apply_infinite_jump,
             )
-        with dpg.group(horizontal=False):
-            dpg.add_checkbox(
-                label="No Knockback",
-                tag=NO_KNOCKBACK_TOGGLE_TAG,
-                callback=apply_no_knockback,
-            )
+        dpg.add_checkbox(
+            label="No Knockback",
+            tag=NO_KNOCKBACK_TOGGLE_TAG,
+            callback=apply_no_knockback,
+        )
 
         dpg.add_separator()
         dpg.add_text(
@@ -966,7 +823,11 @@ def main():
     update_infinite_jump_toggle()
     update_no_knockback_toggle()
 
-    dpg.create_viewport(title=MENU_TITLE, width=480, height=435)
+    dpg.create_viewport(
+        title=MENU_TITLE,
+        width=VIEWPORT_WIDTH,
+        height=VIEWPORT_HEIGHT,
+    )
     dpg.set_viewport_decorated(False)
     dpg.set_viewport_resizable(False)
     dpg.set_viewport_always_top(True)
@@ -1011,8 +872,6 @@ def main():
         keyboard.add_hotkey(
             "f12", callback=lambda: hotkey_nudge_axis("z", -1.0)),
     ]
-    start_anti_cheat_thread()
-
     try:
         while dpg.is_dearpygui_running():
             flush_ui_actions()
