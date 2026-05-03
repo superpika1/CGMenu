@@ -25,4 +25,5 @@ To download Crab Game Menu, follow these steps:
 3. Follow the on-screen instructions to customize your settings and start using the menu.
 4. Enjoy
 
-For some the no knockback might now work.
+## Bugs
+For some the no knockback might not work.
