@@ -21,6 +21,6 @@ To download Crab Game Menu, follow these steps:
 
 ## Usage Instructions
 1. Navigate to the extracted `build` folder.
-2. Run the main.exe file to launch the menu.
+2. Run the main.exe file as `admin` to launch the menu.
 3. Follow the on-screen instructions to customize your settings and start using the menu.
 4. Enjoy
