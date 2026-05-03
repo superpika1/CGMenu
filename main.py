@@ -962,7 +962,6 @@ def main():
             dpg.render_dearpygui_frame()
     finally:
         hp_freeze_stop_event.set()
-        keyboard.remove_hotkey(menu_hotkey_handle)
         keyboard.remove_hotkey(interact_hotkey)
         keyboard.remove_hotkey(set_hp_hotkey)
         keyboard.remove_hotkey(infinite_jump_hotkey)
